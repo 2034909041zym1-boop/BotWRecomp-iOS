@@ -12,18 +12,18 @@ struct Settings {
 #else
     float scale = 0;       // render scale; 0 = fit the display (takes effect at the next launch)
 #endif
+#if TARGET_OS_IOS
+    int display = 1;       // 0 fit (letterbox), 1 stretch, 2 fill (crop)
+#else
     int display = 0;       // 0 fit (letterbox), 1 stretch, 2 fill (crop)
+#endif
     int filter = 1;        // output scaling: 0 bilinear, 1 bicubic, 2 hermite, 3 nearest
     bool gyro = true;      // controller gyro -> GamePad motion
     bool rumble = true;
     int layout = 0;        // 0 Nintendo positions (A = right face button), 1 labels (A = bottom face button)
     bool show_fps = false;
     int volume = 100;      // percent
-#if TARGET_OS_IOS
-    int touch = 1;         // on-screen controls: 0 auto (while no controller), 1 on, 2 off
-#else
     int touch = 0;         // on-screen controls: 0 auto (while no controller), 1 on, 2 off
-#endif
     bool touch_hidden = false;  // collapsed to the show/hide button (that button toggles it)
 };
 

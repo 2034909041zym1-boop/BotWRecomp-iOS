@@ -13,5 +13,6 @@ bool ImGui_BeginPadDistinct(const char* name, bool* p_open, ImGuiWindowFlags fla
 
 void ImGui_PrecacheFonts();
 void ImGui_ClearFonts();
+void ImGui_LoadChineseFont(ImFontAtlas* atlas);
 ImFont* ImGui_GetFont(float size);
 void ImGui_UpdateWindowInformation(bool mainWindow);

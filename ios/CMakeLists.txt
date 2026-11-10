@@ -96,7 +96,7 @@ target_link_libraries(BotWRecomp PRIVATE z SDL3::SDL3-static fmt::fmt zstd::libz
   "-framework Metal" "-framework QuartzCore" "-framework Foundation" "-framework UIKit"
   "-framework CoreGraphics" "-framework ImageIO" "-framework UniformTypeIdentifiers" "-framework VideoToolbox"
   "-framework CoreMedia" "-framework CoreVideo" "-framework GameController" "-framework AVFoundation"
-  "-framework AudioToolbox")
+  "-framework AudioToolbox" "-framework CoreText")
 
 if(BOTW_SDK STREQUAL "iphoneos")
   # MetalFX (upscaling) exists on devices only, not in the simulator SDK

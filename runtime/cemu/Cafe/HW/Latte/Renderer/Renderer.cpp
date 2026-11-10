@@ -37,7 +37,7 @@ void Renderer::Initialize()
 {
 	// imgui
 	imguiFontAtlas = new ImFontAtlas();
-	imguiFontAtlas->AddFontDefault();
+	ImGui_LoadChineseFont(imguiFontAtlas);
 
 	auto setupContext = [](ImGuiContext* context){
 		ImGui::SetCurrentContext(context);

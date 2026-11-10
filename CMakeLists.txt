@@ -57,7 +57,7 @@ find_package(fmt REQUIRED)
 target_link_libraries(BotWRecomp PRIVATE z SDL3::SDL3 fmt::fmt
   /opt/homebrew/opt/openssl@3/lib/libcrypto.dylib /opt/homebrew/opt/zstd/lib/libzstd.dylib
   "-framework Metal" "-framework QuartzCore" "-framework Foundation" "-framework AppKit" "-framework MetalFX"
-  "-framework CoreGraphics" "-framework ImageIO" "-framework UniformTypeIdentifiers" "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo")
+  "-framework CoreGraphics" "-framework ImageIO" "-framework UniformTypeIdentifiers" "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo" "-framework CoreText")
 
 # Native Metal GPU path (docs/native-renderer.md): option BOTW_NATIVE_GPU, default OFF (gpu_native.cmake).
 include(${CMAKE_SOURCE_DIR}/runtime/src/gpu_native/gpu_native.cmake OPTIONAL)

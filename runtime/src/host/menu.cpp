@@ -18,12 +18,12 @@ int g_cursor = 0;
 
 enum RowId { kFps, kScale, kDisplay, kFilter, kGyro, kRumble, kLayout, kTouch, kShowFps, kVolume, kClose, kRows };
 const float kScales[] = {0, 0.5f, 0.75f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the display
-const char* kDisplays[] = {"Fit 16:9", "Stretch", "Fill (crop)"};
-const char* kFilters[] = {"Bilinear", "Bicubic", "Hermite", "Nearest"};
+const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (轻微裁剪)"};
+const char* kFilters[] = {"双线性 (Bilinear)", "双三次 (Bicubic)", "埃尔米特 (Hermite)", "邻近采样 (Nearest)"};
 
 std::string scale_text(float s) {
     char b[64];
-    if (s <= 0) return "Auto (fit the display)";
+    if (s <= 0) return "自动 (适配屏幕)";
     snprintf(b, sizeof b, "%gx  (%dx%d)", s, (int)lroundf(1280 * s), (int)lroundf(720 * s));
     return b;
 }
@@ -139,19 +139,19 @@ View view() {
     Settings s = settings::get();
     char b[64];
     v.rows.resize(kRows);
-    v.rows[kFps] = {"Frame rate", s.fps >= 60 ? "60 fps" : "30 fps (original)"};
-    v.rows[kScale] = {"Resolution", scale_text(s.scale)};
-    v.rows[kDisplay] = {"Aspect", kDisplays[std::clamp(s.display, 0, 2)]};
-    v.rows[kFilter] = {"Upscale filter", kFilters[std::clamp(s.filter, 0, 3)]};
-    v.rows[kGyro] = {"Gyro aiming", s.gyro ? "On" : "Off"};
-    v.rows[kRumble] = {"Rumble", s.rumble ? "On" : "Off"};
-    v.rows[kLayout] = {"Buttons", s.layout ? "A = bottom (Cross / Xbox A)" : "A = right (Circle / Xbox B)"};
-    v.rows[kTouch] = {"Touch controls", s.touch == 1 ? "On" : s.touch == 2 ? "Off" : "Auto (no controller)"};
-    v.rows[kShowFps] = {"FPS counter", s.show_fps ? "On" : "Off"};
+    v.rows[kFps] = {"帧率", s.fps >= 60 ? "60 帧" : "30 帧 (原版)"};
+    v.rows[kScale] = {"渲染分辨率", scale_text(s.scale)};
+    v.rows[kDisplay] = {"画面比例", kDisplays[std::clamp(s.display, 0, 2)]};
+    v.rows[kFilter] = {"图像滤镜", kFilters[std::clamp(s.filter, 0, 3)]};
+    v.rows[kGyro] = {"体感瞄准", s.gyro ? "开启" : "关闭"};
+    v.rows[kRumble] = {"手柄震动", s.rumble ? "开启" : "关闭"};
+    v.rows[kLayout] = {"按键映射", s.layout ? "Xbox布局 (A在下/确认)" : "任天堂布局 (A在右/确认)"};
+    v.rows[kTouch] = {"触控虚拟按键", s.touch == 1 ? "常开" : s.touch == 2 ? "关闭" : "自动 (连接手柄隐藏)"};
+    v.rows[kShowFps] = {"显示帧率", s.show_fps ? "开启" : "关闭"};
     snprintf(b, sizeof b, "%d%%", s.volume);
-    v.rows[kVolume] = {"Volume", b};
-    v.rows[kClose] = {"Close", "", true};
-    snprintf(b, sizeof b, "Rendering at %gx now; resolution changes apply after a restart.", g_render_scale);
+    v.rows[kVolume] = {"音量", b};
+    v.rows[kClose] = {"关闭菜单", "", true};
+    snprintf(b, sizeof b, "当前以 %gx 渲染；分辨率改动将在重启后生效。", g_render_scale);
     v.note = b;
     return v;
 }

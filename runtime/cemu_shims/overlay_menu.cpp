@@ -79,8 +79,8 @@ void LatteOverlay_render(bool padView) {
     ImGui::SetNextWindowBgAlpha(0.88f);
     if (ImGui::Begin("##menu", nullptr, overlay)) {
         ImGui::SetWindowFontScale(ui * 1.25f);
-        const float label_w = 150 * ui, value_w = 230 * ui;
-        ImGui::TextUnformatted("BotWRecomp settings");
+        const float label_w = 150 * ui, value_w = 240 * ui;
+        ImGui::TextUnformatted("旷野之息 设置");
         const float xs = ImGui::GetFrameHeight();  // X in the top-right corner
         ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x - xs);
         if (ImGui::Button("X", {xs, xs})) menu::close();
@@ -106,7 +106,7 @@ void LatteOverlay_render(bool padView) {
         ImGui::Separator();
         ImGui::SetWindowFontScale(ui);
         ImGui::TextUnformatted(v.note.c_str());
-        ImGui::TextUnformatted("D-pad: choose / change   A: select   B, touchpad, F1, X or a tap outside: close");
+        ImGui::TextUnformatted("方向键: 选择/调节   A: 确认   B/触摸板/点击外部/右上角X: 关闭");
         // for touch (host side, see menu::touch_close): panel and X in fractions of the screen
         const ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize(), d = io.DisplaySize;
         const float panel[4] = {wp.x / d.x, wp.y / d.y, (wp.x + ws.x) / d.x, (wp.y + ws.y) / d.y};
