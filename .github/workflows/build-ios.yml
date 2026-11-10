@@ -1,0 +1,91 @@
+name: Build iOS BotWRecomp IPA
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: 'App Bundle Identifier'
+        required: false
+        default: 'com.botw.recomp'
+
+jobs:
+  build:
+    name: Build iOS IPA
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install System Dependencies
+        run: |
+          brew update
+          brew install cmake ninja uv boost glm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate C++ Code (if not present)
+        run: |
+          if [ ! -f "generated/table.cpp" ]; then
+            if [ -f "U-King.rpx" ]; then
+              echo "== Generating C++ files from U-King.rpx =="
+              mkdir -p generated
+              python3 -I tools/recompile.py U-King.rpx generated
+            else
+              echo "Error: Neither generated/table.cpp nor U-King.rpx found!"
+              exit 1
+            fi
+          else
+            echo "== generated/ C++ code already present =="
+          fi
+
+      - name: Build iOS Dependencies (SDL3, fmt, zstd)
+        run: |
+          chmod +x ios/scripts/*.sh
+          ./ios/scripts/build_deps.sh iphoneos
+
+      - name: Configure CMake for iOS
+        env:
+          BUNDLE_ID: ${{ github.event.inputs.bundle_id || 'com.botw.recomp' }}
+        run: |
+          cmake -S ios -B build-ios/iphoneos -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBOTW_BUNDLE_ID="$BUNDLE_ID" \
+            -DBOTW_IOS_DEPS="$PWD/ios-deps"
+
+      - name: Build BotWRecomp
+        run: |
+          cmake --build build-ios/iphoneos -j 4
+
+      - name: Ad-Hoc Sign & Package IPA
+        run: |
+          APP_PATH="build-ios/iphoneos/BotWRecomp.app"
+          ENTITLEMENTS="ios/BotWRecomp.entitlements"
+          
+          # Ad-hoc sign the app bundle with increased memory limit entitlement
+          codesign --force --sign - --timestamp=none --entitlements "$ENTITLEMENTS" "$APP_PATH"
+          codesign --verify --strict "$APP_PATH" || true
+          
+          # Package into IPA
+          mkdir -p build-ios/iphoneos/Payload
+          cp -R "$APP_PATH" build-ios/iphoneos/Payload/
+          cd build-ios/iphoneos
+          zip -qr BotWRecomp.ipa Payload/
+          echo "IPA packaging complete: $(ls -lh BotWRecomp.ipa)"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BotWRecomp-iOS18-IPA
+          path: build-ios/iphoneos/BotWRecomp.ipa
+          retention-days: 14
