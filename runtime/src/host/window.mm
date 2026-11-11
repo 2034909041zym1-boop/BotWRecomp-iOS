@@ -25,6 +25,12 @@ extern std::atomic<pthread_t> g_gpu_thread;  // cemu_shims/overlay_menu.cpp: Cem
 
 extern "C" int g_trace_hle;
 
+#include <atomic>
+static std::atomic<bool> g_app_in_background{false};
+extern "C" bool botw_is_background() {
+    return g_app_in_background.load(std::memory_order_relaxed);
+}
+
 namespace window {
 namespace {
 SDL_Window* g_win = nullptr;
@@ -289,6 +295,7 @@ void run() {
             if (e.type == SDL_EVENT_QUIT) g_quit = true;
             else if (e.type == SDL_EVENT_DID_ENTER_BACKGROUND || e.type == SDL_EVENT_WILL_ENTER_FOREGROUND) {
                 g_background = e.type == SDL_EVENT_DID_ENTER_BACKGROUND;
+                g_app_in_background.store(g_background, std::memory_order_relaxed);
                 LOG("app %s", g_background ? "entered the background" : "returning to the foreground");
                 if (!g_background) {
                     latte::notify_foreground();

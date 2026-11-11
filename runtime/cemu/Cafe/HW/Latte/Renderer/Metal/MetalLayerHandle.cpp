@@ -24,11 +24,11 @@ void MetalLayerHandle::Resize(const Vector2i& size)
     m_layer->setDrawableSize(CGSize{(float)size.x * m_layerScaleX, (float)size.y * m_layerScaleY});
 }
 
-extern bool g_background;
+extern "C" bool botw_is_background();
 
 bool MetalLayerHandle::AcquireDrawable()
 {
-    if (g_background)
+    if (botw_is_background())
         return false;
 
     if (m_drawable)

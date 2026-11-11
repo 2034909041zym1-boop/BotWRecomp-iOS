@@ -244,22 +244,22 @@ uint32_t flips_executed() { return _swapEndianU32(LatteGPUState.sharedArea->flip
 void add_flip_request() {
     LatteGPUState.sharedArea->flipRequestCountBE = _swapEndianU32(_swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE) + 1);
 }
-extern bool g_background;
+extern "C" bool botw_is_background();
 
 void wait_for_flip() {
     std::unique_lock<std::mutex> l(g_sync_lock);
-    if (g_background) return;
+    if (botw_is_background()) return;
     if (flip_requests() == flips_executed()) return;
     g_flip_cv.wait_for(l, std::chrono::milliseconds(100));
 }
 void wait_for_vsync() {
     std::unique_lock<std::mutex> l(g_sync_lock);
-    if (g_background) {
+    if (botw_is_background()) {
         g_vsync_count++;
         return;
     }
     uint64 v = g_vsync_count;
-    g_vsync_cv.wait_for(l, std::chrono::milliseconds(100), [&] { return g_vsync_count != v || g_background; });
+    g_vsync_cv.wait_for(l, std::chrono::milliseconds(100), [&] { return g_vsync_count != v || botw_is_background(); });
 }
 void notify_foreground() {
     std::lock_guard<std::mutex> l(g_sync_lock);

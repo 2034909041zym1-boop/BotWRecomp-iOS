@@ -1974,11 +1974,11 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
     }
 }
 
-extern bool g_background;
+extern "C" bool botw_is_background();
 
 bool MetalRenderer::AcquireDrawable(bool mainWindow)
 {
-    if (g_background)
+    if (botw_is_background())
         return false;
 
     auto& layer = GetLayer(mainWindow);
@@ -2331,7 +2331,7 @@ void MetalRenderer::CopyBufferToBuffer(MTL::Buffer* src, uint32 srcOffset, MTL::
 
 void MetalRenderer::SwapBuffer(bool mainWindow)
 {
-    if (g_background)
+    if (botw_is_background())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(33));
         return;
