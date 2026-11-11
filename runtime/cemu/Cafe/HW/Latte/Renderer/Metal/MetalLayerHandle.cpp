@@ -24,8 +24,13 @@ void MetalLayerHandle::Resize(const Vector2i& size)
     m_layer->setDrawableSize(CGSize{(float)size.x * m_layerScaleX, (float)size.y * m_layerScaleY});
 }
 
+extern bool g_background;
+
 bool MetalLayerHandle::AcquireDrawable()
 {
+    if (g_background)
+        return false;
+
     if (m_drawable)
         return true;
 
@@ -41,6 +46,9 @@ bool MetalLayerHandle::AcquireDrawable()
 
 void MetalLayerHandle::PresentDrawable(MTL::CommandBuffer* commandBuffer)
 {
-    commandBuffer->presentDrawable(m_drawable);
-    m_drawable = nullptr;
+    if (m_drawable)
+    {
+        commandBuffer->presentDrawable(m_drawable);
+        m_drawable = nullptr;
+    }
 }

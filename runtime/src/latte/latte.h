@@ -54,6 +54,7 @@ uint32_t flips_executed();
 void add_flip_request();
 void wait_for_flip();
 void wait_for_vsync();
+void notify_foreground();
 uint64_t last_flip_time();
 uint64_t last_vsync_time();
 uint32_t swap_interval();

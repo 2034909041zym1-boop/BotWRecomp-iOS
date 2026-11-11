@@ -290,6 +290,9 @@ void run() {
             else if (e.type == SDL_EVENT_DID_ENTER_BACKGROUND || e.type == SDL_EVENT_WILL_ENTER_FOREGROUND) {
                 g_background = e.type == SDL_EVENT_DID_ENTER_BACKGROUND;
                 LOG("app %s", g_background ? "entered the background" : "returning to the foreground");
+                if (!g_background) {
+                    latte::notify_foreground();
+                }
             } else if (e.type == SDL_EVENT_TERMINATING) LOG("app terminating");
             else if (e.type == SDL_EVENT_GAMEPAD_ADDED && !g_pad) {
                 g_pad = SDL_OpenGamepad(e.gdevice.which);

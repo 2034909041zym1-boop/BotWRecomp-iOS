@@ -1152,7 +1152,6 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
     const auto fetchShader = LatteSHRC_GetActiveFetchShader();
 
-    /*
     bool neverSkipAccurateBarrier = false;
 
     // "Accurate barriers" is usually enabled globally but since the CPU cost is substantial we allow users to disable it (debug -> 'Accurate barriers' option)
@@ -1182,7 +1181,6 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
             cemuLog_logOnce(LogType::Force, "Ending render pass due to render target self-dependency\n");
         }
 	}
-	*/
 
     // Primitive type
     const LattePrimitiveMode primitiveMode = LatteGPUState.contextNew.VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE();
@@ -1976,8 +1974,13 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
     }
 }
 
+extern bool g_background;
+
 bool MetalRenderer::AcquireDrawable(bool mainWindow)
 {
+    if (g_background)
+        return false;
+
     auto& layer = GetLayer(mainWindow);
     if (!layer.GetLayer())
         return false;
@@ -1992,9 +1995,11 @@ bool MetalRenderer::AcquireDrawable(bool mainWindow)
     return layer.AcquireDrawable();
 }
 
-/*
 bool MetalRenderer::CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader)
 {
+    if (!shader || !m_state.m_activeFBO.m_fbo)
+        return false;
+
     sint32 textureCount = shader->resourceMapping.getTextureCount();
 	for (int i = 0; i < textureCount; ++i)
 	{
@@ -2031,18 +2036,22 @@ bool MetalRenderer::CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader)
 
 		LatteTexture* baseTexture = textureView->baseTexture;
 
-	    // If the texture is also used in the current render pass, we need to end the render pass to "flush" the texture
-		for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
+	    // If the texture is also used in the current render pass as color target, flush
+		for (uint8 j = 0; j < LATTE_NUM_COLOR_TARGET; j++)
 		{
-		    auto colorTarget = m_state.m_activeFBO.m_fbo->colorBuffer[i].texture;
+		    auto colorTarget = m_state.m_activeFBO.m_fbo->colorBuffer[j].texture;
 			if (colorTarget && colorTarget->baseTexture == baseTexture)
 			    return true;
 		}
+
+        // If the texture is also used in the current render pass as depth target (e.g. water sampling scene depth), flush
+        auto depthTarget = m_state.m_activeFBO.m_fbo->depthBuffer.texture;
+        if (depthTarget && depthTarget->baseTexture == baseTexture)
+            return true;
 	}
 
 	return false;
 }
-*/
 
 void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader)
 {
@@ -2322,6 +2331,12 @@ void MetalRenderer::CopyBufferToBuffer(MTL::Buffer* src, uint32 srcOffset, MTL::
 
 void MetalRenderer::SwapBuffer(bool mainWindow)
 {
+    if (g_background)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        return;
+    }
+
     if (!AcquireDrawable(mainWindow))
         return;
 
