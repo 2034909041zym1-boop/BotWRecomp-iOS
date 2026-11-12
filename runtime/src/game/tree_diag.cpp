@@ -1,4 +1,5 @@
-// Temporary diagnostic hooks for the tree-top 1-FPS freeze inside hkpWorld BVH cast (f_04147e30).
+// Temporary diagnostic hooks for tracing the first NaN origin in camera shape-cast (f_02c07c84)
+// and confirming BVH traversal behavior (f_04147e30).
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -7,143 +8,170 @@
 #include "hooks.h"
 
 namespace {
-struct CallerCastState {
-    bool valid = false;
-    uint64_t seq = 0;
-    float start[3]{};
-    float end[3]{};
-    float shape_a[3]{};
-    float shape_b[3]{};
+struct CamSnapshot {
+    uint32_t cam = 0;
+    float f1472[14]{};
+    float f1584[14]{};
+    float v1768[3]{};
+    float ang1792 = 0, ang1796 = 0, ang1804 = 0;
 };
 
-struct BvhDiagState {
-    int depth = 0;
-    uint32_t iters = 0;
-    uint32_t leaves = 0;
-    uint32_t r3 = 0;
-    uint32_t r4 = 0;
-    uint32_t r5 = 0;
-    uint32_t lr = 0;
-    uint32_t bad_leaf_hits = 0;
-    float start[3]{};
-    float end[3]{};
-    float half[3]{};
-    std::chrono::steady_clock::time_point t0{};
-};
+bool any_nan(const float* p, int n) {
+    for (int i = 0; i < n; i++) {
+        if (!std::isfinite(p[i])) return true;
+    }
+    return false;
+}
 
-thread_local CallerCastState tl_caller;
-thread_local BvhDiagState tl_bvh;
-std::atomic<uint64_t> g_last_log_ms{0};
-std::atomic<uint64_t> g_seq{0};
+bool cam_has_nan(uint32_t cam, const char** which) {
+    for (int i = 0; i < 14; i++) {
+        if (!std::isfinite(mem::rf32(cam + 1472 + i * 4))) { *which = "1472"; return true; }
+    }
+    for (int i = 0; i < 14; i++) {
+        if (!std::isfinite(mem::rf32(cam + 1584 + i * 4))) { *which = "1584"; return true; }
+    }
+    for (int i = 0; i < 3; i++) {
+        if (!std::isfinite(mem::rf32(cam + 1768 + i * 4))) { *which = "1768"; return true; }
+    }
+    if (!std::isfinite(mem::rf32(cam + 1792))) { *which = "1792"; return true; }
+    if (!std::isfinite(mem::rf32(cam + 1796))) { *which = "1796"; return true; }
+    if (!std::isfinite(mem::rf32(cam + 1804))) { *which = "1804"; return true; }
+    return false;
+}
 
-bool rate_limit(uint64_t min_interval_ms) {
-    uint64_t now = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::steady_clock::now().time_since_epoch())
-                       .count();
-    uint64_t prev = g_last_log_ms.load(std::memory_order_relaxed);
-    if (now - prev < min_interval_ms) return false;
-    return g_last_log_ms.compare_exchange_strong(prev, now, std::memory_order_relaxed);
+void log_cam(const char* tag, uint32_t cam, uint32_t r1, const char* which) {
+    LOG("[nan-trace] %s (%s) cam=%08x "
+        "1472=[(%.4g,%.4g,%.4g)->(%.4g,%.4g,%.4g) fov=%.4g a=%.4g d=%.4g] "
+        "1584=[(%.4g,%.4g,%.4g)->(%.4g,%.4g,%.4g) fov=%.4g a=%.4g d=%.4g] "
+        "1768=(%.4g,%.4g,%.4g) ang=(%.4g,%.4g,%.4g) 1344=%.4g 1832=%.4g r1_60=(%.4g,%.4g,%.4g) r1_96=(%.4g,%.4g,%.4g)",
+        tag, which ? which : "-", cam,
+        mem::rf32(cam + 1472), mem::rf32(cam + 1476), mem::rf32(cam + 1480),
+        mem::rf32(cam + 1484), mem::rf32(cam + 1488), mem::rf32(cam + 1492),
+        mem::rf32(cam + 1508), mem::rf32(cam + 1516), mem::rf32(cam + 1520),
+        mem::rf32(cam + 1584), mem::rf32(cam + 1588), mem::rf32(cam + 1592),
+        mem::rf32(cam + 1596), mem::rf32(cam + 1600), mem::rf32(cam + 1604),
+        mem::rf32(cam + 1620), mem::rf32(cam + 1628), mem::rf32(cam + 1632),
+        mem::rf32(cam + 1768), mem::rf32(cam + 1772), mem::rf32(cam + 1776),
+        mem::rf32(cam + 1792), mem::rf32(cam + 1796), mem::rf32(cam + 1804),
+        mem::rf32(cam + 1344), mem::rf32(cam + 1832),
+        r1 ? mem::rf32(r1 + 60) : 0.f, r1 ? mem::rf32(r1 + 64) : 0.f, r1 ? mem::rf32(r1 + 68) : 0.f,
+        r1 ? mem::rf32(r1 + 96) : 0.f, r1 ? mem::rf32(r1 + 100) : 0.f, r1 ? mem::rf32(r1 + 104) : 0.f);
+}
+
+thread_local CamSnapshot tl_prev;
+thread_local bool tl_has_prev = false;
+thread_local uint32_t tl_frame_nan_mask = 0;
+std::atomic<int> g_nan_logs{0};
+
+void check_point(int bit, const char* tag, uint32_t cam, uint32_t r1, bool chk_s60 = false, bool chk_s96 = false) {
+    if (tl_frame_nan_mask != 0) return;
+    const char* which = nullptr;
+    bool bad = cam_has_nan(cam, &which);
+    if (!bad && chk_s60 && r1) {
+        float s60[3] = {mem::rf32(r1 + 60), mem::rf32(r1 + 64), mem::rf32(r1 + 68)};
+        if (any_nan(s60, 3)) { bad = true; which = "stack60"; }
+    }
+    if (!bad && chk_s96 && r1) {
+        float s96[3] = {mem::rf32(r1 + 96), mem::rf32(r1 + 100), mem::rf32(r1 + 104)};
+        if (any_nan(s96, 3)) { bad = true; which = "stack96"; }
+    }
+    if (!bad) return;
+    tl_frame_nan_mask = 1u << bit;
+    int n = g_nan_logs.fetch_add(1, std::memory_order_relaxed);
+    if (n < 12) {
+        if (tl_has_prev && tl_prev.cam == cam) {
+            LOG("[nan-trace] PREV_OK 1472=[(%.4g,%.4g,%.4g)->(%.4g,%.4g,%.4g) fov=%.4g] 1584=[(%.4g,%.4g,%.4g)->(%.4g,%.4g,%.4g) fov=%.4g] 1768=(%.4g,%.4g,%.4g) ang=(%.4g,%.4g,%.4g)",
+                tl_prev.f1472[0], tl_prev.f1472[1], tl_prev.f1472[2],
+                tl_prev.f1472[3], tl_prev.f1472[4], tl_prev.f1472[5], tl_prev.f1472[9],
+                tl_prev.f1584[0], tl_prev.f1584[1], tl_prev.f1584[2],
+                tl_prev.f1584[3], tl_prev.f1584[4], tl_prev.f1584[5], tl_prev.f1584[9],
+                tl_prev.v1768[0], tl_prev.v1768[1], tl_prev.v1768[2],
+                tl_prev.ang1792, tl_prev.ang1796, tl_prev.ang1804);
+        }
+        log_cam(tag, cam, r1, which);
+    }
 }
 }  // namespace
 
-// f_02c07c84 just before bctrl to f_034d171c (addi r3, r1, 440)
-BOTW_HOOK(0x02c087f0) {
+// 0: Entry of f_02c07c84 (stwu r1, -640(r1)); c->r[3] is cam
+BOTW_HOOK(0x02c07c84) {
+    tl_frame_nan_mask = 0;
+    check_point(0, "0_entry", c->r[3], 0);
+}
+
+// 1: Right after vtable[1316] camera update (lwz r0, 3396(r31))
+BOTW_HOOK(0x02c07cec) { check_point(1, "1_after_vt1316", c->r[31], c->r[1]); }
+
+// 2: After frsqrte block 0x02c07d18..0x02c07de0 (psq_l f0, 1584(r31))
+BOTW_HOOK(0x02c07de4) { check_point(2, "2_after_frsqrte", c->r[31], c->r[1]); }
+
+// 3: After 0x02e557d0 #1 on 1584->1604 into r1+60 (lfs f11, 1480(r31))
+BOTW_HOOK(0x02c07e2c) { check_point(3, "3_after_sph1", c->r[31], c->r[1], true, false); }
+
+// 4: After 0x02e557d0 #2 on 1472->1492 into r1+96 (lfs f13, 64(r1))
+BOTW_HOOK(0x02c07e70) { check_point(4, "4_after_sph2", c->r[31], c->r[1], true, true); }
+
+// 5: After storing 1792/1796/1804 (stfs f8, 1804(r31))
+BOTW_HOOK(0x02c07ea8) { check_point(5, "5_after_angdiff", c->r[31], c->r[1]); }
+
+// 6: After 0x02c08340..0x02c0837c fdivs+0x02b8f2c4 (lfs f1, 1344(r31))
+BOTW_HOOK(0x02c08380) {
+    if (tl_frame_nan_mask == 0 && !std::isfinite(c->f[2])) {
+        tl_frame_nan_mask = 1u << 6;
+        if (g_nan_logs.fetch_add(1, std::memory_order_relaxed) < 12) {
+            LOG("[nan-trace] 6_f2_bad f2=%g f28=%g f29=%g f1=%g", c->f[2], c->f[28], c->f[29], c->f[1]);
+            log_cam("6_f2_bad", c->r[31], c->r[1], "f2");
+        }
+        return;
+    }
+    check_point(6, "6_after_timer_lerp", c->r[31], c->r[1]);
+}
+
+// 7: After 0x02b8f350 + 0x02e5527c loop (lfs f7, 1768(r31))
+BOTW_HOOK(0x02c08424) { check_point(7, "7_after_ang_lerp", c->r[31], c->r[1]); }
+
+// 8: After 0x02c085ec bl 0x02c06368 (addi r3, r31, 3248)
+BOTW_HOOK(0x02c085f0) { check_point(8, "8_after_build1584", c->r[31], c->r[1]); }
+
+// 9: After 0x02c0878c bl 0x02e53de4 (or 29, 9, 29)
+BOTW_HOOK(0x02c08790) {
     uint32_t r1 = c->r[1];
-    tl_caller.valid = true;
-    tl_caller.seq = g_seq.fetch_add(1, std::memory_order_relaxed) + 1;
-    for (int i = 0; i < 3; i++) {
-        tl_caller.start[i] = mem::rf32(r1 + 224 + i * 4);
-        tl_caller.end[i] = mem::rf32(r1 + 320 + i * 4);
-        tl_caller.shape_a[i] = mem::rf32(r1 + 440 + 8 + i * 4);
-        tl_caller.shape_b[i] = mem::rf32(r1 + 440 + 32 + i * 4);
-    }
-}
-
-// Entry of f_04147e30 (or r11, r1, r1)
-BOTW_HOOK(0x04147e30) {
-    if (tl_bvh.depth++ > 0) return;
-    tl_bvh.iters = 0;
-    tl_bvh.leaves = 0;
-    tl_bvh.bad_leaf_hits = 0;
-    tl_bvh.r3 = c->r[3];
-    tl_bvh.r4 = c->r[4];
-    tl_bvh.r5 = c->r[5];
-    tl_bvh.lr = c->lr;
-    tl_bvh.t0 = std::chrono::steady_clock::now();
-    uint32_t r4 = c->r[4];
-    for (int i = 0; i < 3; i++) {
-        tl_bvh.start[i] = mem::rf32(r4 + i * 4);
-        tl_bvh.end[i] = mem::rf32(r4 + 16 + i * 4);
-        tl_bvh.half[i] = mem::rf32(r4 + 32 + i * 4);
-    }
-}
-
-// BVH loop head inside f_04147e30 (lhz r9, 30(r6))
-BOTW_HOOK(0x04148418) {
-    if (tl_bvh.depth != 1) return;
-    uint32_t n = ++tl_bvh.iters;
-    if (n == 50000 || (n > 50000 && (n % 2000000) == 0)) {
-        if (!rate_limit(1500)) return;
-        uint32_t r1 = c->r[1];
-        uint32_t r6 = c->r[6];
-        double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tl_bvh.t0).count();
-        LOG("[tree-diag] MID iters=%u leaves=%u %.1fms lr=%08x r27=%u sp_cnt=%u r6=%08x (c0=%u c1=%u) "
-            "ray_start=(%.4g,%.4g,%.4g) ray_end=(%.4g,%.4g,%.4g) half=(%.4g,%.4g,%.4g) "
-            "orig=(%.4g,%.4g,%.4g) inv=(%.4g,%.4g,%.4g) frac=%.6g node_min=(%.4g,%.4g,%.4g) node_max=(%.4g,%.4g,%.4g)",
-            n, tl_bvh.leaves, ms, tl_bvh.lr, c->r[27], mem::r32(r1 + 24), r6,
-            mem::r16(r6 + 28), mem::r16(r6 + 30),
-            tl_bvh.start[0], tl_bvh.start[1], tl_bvh.start[2],
-            tl_bvh.end[0], tl_bvh.end[1], tl_bvh.end[2],
-            tl_bvh.half[0], tl_bvh.half[1], tl_bvh.half[2],
-            mem::rf32(r1 + 128), mem::rf32(r1 + 132), mem::rf32(r1 + 136),
-            mem::rf32(r1 + 160), mem::rf32(r1 + 164), mem::rf32(r1 + 168),
-            mem::rf32(r1 + 156),
-            mem::rf32(r6 + 0), mem::rf32(r6 + 4), mem::rf32(r6 + 8),
-            mem::rf32(r6 + 16), mem::rf32(r6 + 20), mem::rf32(r6 + 24));
-        if (tl_caller.valid) {
-            LOG("[tree-diag] CALLER seq=%llu start=(%.4g,%.4g,%.4g) end=(%.4g,%.4g,%.4g) sa=(%.4g,%.4g,%.4g) sb=(%.4g,%.4g,%.4g)",
-                (unsigned long long)tl_caller.seq,
-                tl_caller.start[0], tl_caller.start[1], tl_caller.start[2],
-                tl_caller.end[0], tl_caller.end[1], tl_caller.end[2],
-                tl_caller.shape_a[0], tl_caller.shape_a[1], tl_caller.shape_a[2],
-                tl_caller.shape_b[0], tl_caller.shape_b[1], tl_caller.shape_b[2]);
-        }
-    }
-}
-
-// Right after leaf callback bctrl inside f_04147e30 (ps_merge00 f13, f1, f1)
-BOTW_HOOK(0x041488b0) {
-    if (tl_bvh.depth != 1) return;
-    tl_bvh.leaves++;
-    if (!std::isfinite(c->f[1]) && tl_bvh.bad_leaf_hits < 3) {
-        tl_bvh.bad_leaf_hits++;
-        LOG("[tree-diag] BAD_LEAF_RET f1=%g bits=%016llx iters=%u leaves=%u",
-            c->f[1], (unsigned long long)dbits(c->f[1]), tl_bvh.iters, tl_bvh.leaves);
-    }
-}
-
-// Exit of f_04147e30 (addi r11, r29, 72)
-BOTW_HOOK(0x041489e8) {
-    if (--tl_bvh.depth != 0) return;
-    double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tl_bvh.t0).count();
-    if (tl_bvh.iters >= 5000 || ms >= 30.0) {
-        if (rate_limit(1000)) {
-            uint32_t r1 = c->r[1];
-            LOG("[tree-diag] DONE iters=%u leaves=%u %.1fms bad_ret=%u lr=%08x frac=%.6g "
-                "ray_start=(%.4g,%.4g,%.4g) ray_end=(%.4g,%.4g,%.4g) half=(%.4g,%.4g,%.4g)",
-                tl_bvh.iters, tl_bvh.leaves, ms, tl_bvh.bad_leaf_hits, tl_bvh.lr,
-                mem::rf32(r1 + 156),
-                tl_bvh.start[0], tl_bvh.start[1], tl_bvh.start[2],
-                tl_bvh.end[0], tl_bvh.end[1], tl_bvh.end[2],
-                tl_bvh.half[0], tl_bvh.half[1], tl_bvh.half[2]);
-            if (tl_caller.valid) {
-                LOG("[tree-diag] DONE_CALLER seq=%llu start=(%.4g,%.4g,%.4g) end=(%.4g,%.4g,%.4g) sa=(%.4g,%.4g,%.4g) sb=(%.4g,%.4g,%.4g)",
-                    (unsigned long long)tl_caller.seq,
-                    tl_caller.start[0], tl_caller.start[1], tl_caller.start[2],
-                    tl_caller.end[0], tl_caller.end[1], tl_caller.end[2],
-                    tl_caller.shape_a[0], tl_caller.shape_a[1], tl_caller.shape_a[2],
-                    tl_caller.shape_b[0], tl_caller.shape_b[1], tl_caller.shape_b[2]);
+    if (tl_frame_nan_mask == 0) {
+        float s[6] = {mem::rf32(r1 + 224), mem::rf32(r1 + 228), mem::rf32(r1 + 232),
+                      mem::rf32(r1 + 320), mem::rf32(r1 + 324), mem::rf32(r1 + 328)};
+        if (!std::isfinite(c->f[1]) || any_nan(s, 6)) {
+            tl_frame_nan_mask = 1u << 9;
+            if (g_nan_logs.fetch_add(1, std::memory_order_relaxed) < 12) {
+                LOG("[nan-trace] 9_after_de4 f1=%g s224=(%.4g,%.4g,%.4g) e320=(%.4g,%.4g,%.4g)",
+                    c->f[1], s[0], s[1], s[2], s[3], s[4], s[5]);
+                log_cam("9_after_de4", c->r[31], r1, "de4_or_e98");
             }
+            return;
         }
     }
+    check_point(9, "9_after_de4", c->r[31], r1);
 }
+
+// 10: After shape_cast bctrl + 0x02c08894 hit update (psq_l f9, 1596(r31))
+BOTW_HOOK(0x02c0892c) { check_point(10, "10_after_hit_upd", c->r[31], c->r[1]); }
+
+// 11: After 0x02c08994 + 1596..1604 update (addi r3, r31, 1584)
+BOTW_HOOK(0x02c089e8) {
+    check_point(11, "11_after_post_sph", c->r[31], c->r[1]);
+    if (tl_frame_nan_mask == 0) {
+        uint32_t cam = c->r[31];
+        tl_prev.cam = cam;
+        for (int i = 0; i < 14; i++) {
+            tl_prev.f1472[i] = mem::rf32(cam + 1472 + i * 4);
+            tl_prev.f1584[i] = mem::rf32(cam + 1584 + i * 4);
+        }
+        for (int i = 0; i < 3; i++) tl_prev.v1768[i] = mem::rf32(cam + 1768 + i * 4);
+        tl_prev.ang1792 = mem::rf32(cam + 1792);
+        tl_prev.ang1796 = mem::rf32(cam + 1796);
+        tl_prev.ang1804 = mem::rf32(cam + 1804);
+        tl_has_prev = true;
+    }
+}
+
+// 12: Near end of f_02c07c84 after 0x02c08b84..0x02c08c1c stores (stfs f6, 1464(r31))
+BOTW_HOOK(0x02c08c1c) { check_point(12, "12_tail", c->r[31], c->r[1]); }
