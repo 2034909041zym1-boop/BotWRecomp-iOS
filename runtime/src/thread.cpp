@@ -27,14 +27,18 @@ std::unordered_map<uint32_t, GuestThread*> g_threads;  // OSThread* -> thread
 uint16_t g_next_id = 1;
 constexpr size_t kHostStack = 64u << 20;  // guest recursion maps onto the host stack
 
+void apply_host_thread_attrs(const std::string& name, bool is_main) {
+    // The game's main thread and the light timing threads (audio, alarms, GX2 callbacks) get the highest QoS so
+    // the scheduler keeps them on performance cores (a phone has two); worker threads one step below.
+    const bool critical = is_main || name == "AX" || name == "alarms" || name == "GX2 callbacks";
+    pthread_set_qos_class_self_np(critical ? QOS_CLASS_USER_INTERACTIVE : QOS_CLASS_USER_INITIATED, 0);
+    pthread_setname_np(name.empty() ? "guest" : name.c_str());
+}
+
 void run_thread(GuestThread* t) {
     t_current = t;
     t->host_tid = pthread_self();
-    // The game's main thread and the light timing threads (audio, alarms, GX2 callbacks) get the highest QoS so
-    // the scheduler keeps them on performance cores (a phone has two); worker threads one step below.
-    const bool critical = t->is_main || t->name == "AX" || t->name == "alarms" || t->name == "GX2 callbacks";
-    pthread_set_qos_class_self_np(critical ? QOS_CLASS_USER_INTERACTIVE : QOS_CLASS_USER_INITIATED, 0);
-    pthread_setname_np(t->name.empty() ? "guest" : t->name.c_str());
+    apply_host_thread_attrs(t->name, t->is_main);
     PPCContext* c = &t->ctx;
     c->lr = 0;
     rt_call(c, t->entry);
@@ -192,9 +196,11 @@ static uint32_t new_os_thread(const char* name, uint32_t entry, uint32_t stack_t
 }
 
 GuestThread* adopt_host_thread(const char* name, uint32_t stack_size, int core) {
+    apply_host_thread_attrs(name ? name : "", false);
     GuestThread* t = new GuestThread;
     uint32_t stack = mem::sys_alloc(stack_size, 16);
-    t->name = name;
+    t->name = name ? name : "";
+    t->host_tid = pthread_self();
     t->core = core;
     t->started = true;
     t->suspend = 0;

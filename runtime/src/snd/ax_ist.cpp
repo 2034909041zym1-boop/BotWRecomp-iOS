@@ -846,10 +846,11 @@ namespace snd_core
 			threads::adopt_host_thread("AX", kIstGuestStackSize, 1);
 
 			using clock = std::chrono::steady_clock;
-			// Cemu AXOut_update: 3 ms per frame, 2.9 ms while the output device is running low,
-			// at least 1.7 ms between frames, skip ahead instead of catching up when far behind
+			// 3 ms per frame nominally; 2.7 ms when below low-water (48 ms), 2.2 ms when urgently
+			// starved (< 24 ms), 3.1 ms when drifting above high-water, at least 1.7 ms between frames.
 			constexpr auto kWaitDuration = std::chrono::microseconds(3000);
-			constexpr auto kWaitDurationFast = std::chrono::microseconds(2900);
+			constexpr auto kWaitDurationFast = std::chrono::microseconds(2700);
+			constexpr auto kWaitDurationUrgent = std::chrono::microseconds(2200);
 			constexpr auto kWaitDurationSlow = std::chrono::microseconds(3100); // host addition: device clock drift
 			constexpr auto kWaitDurationMinimum = std::chrono::microseconds(1700);
 			constexpr auto kTimeout = std::chrono::milliseconds(100);
@@ -860,7 +861,7 @@ namespace snd_core
 			while (!s_istStopRequested)
 			{
 				sint32 pacing = AXOut_GetFramePacingAdjustment();
-				nextFrame += pacing < 0 ? kWaitDurationFast : (pacing > 0 ? kWaitDurationSlow : kWaitDuration);
+				nextFrame += pacing < -1 ? kWaitDurationUrgent : (pacing < 0 ? kWaitDurationFast : (pacing > 0 ? kWaitDurationSlow : kWaitDuration));
 				auto now = clock::now();
 				if (now - nextFrame >= kTimeout)
 					nextFrame = now; // too far behind (stall, debugger): skip forward

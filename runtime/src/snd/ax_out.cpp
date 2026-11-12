@@ -295,21 +295,22 @@ namespace snd_core
 		audio::init();
 	}
 
-	// Frame pacing hint for the AX thread, mirroring Cemu's AXOut_update(): if the host device is
-	// running low (Cemu: NeedAdditionalBlocks, i.e. less than the configured delay of 2 blocks of
-	// 4 frames queued) frames are generated slightly faster (-1). Host addition: if the queue grows
-	// past ~100 ms (device clock slower than the host clock) frames are generated slightly slower (+1).
-	// Without a device (headless/muted runs) the host clock alone paces the frames (0).
+	// Frame pacing hint for the AX thread: keep a healthy cushion above CoreAudio's 512-1024 frame
+	// AudioQueue callbacks (48 ms target low-water vs 24 ms urgent starvation floor) so 60 fps CPU
+	// contention doesn't drain the stream, and slow down slightly above ~125 ms on clock drift.
 	sint32 AXOut_GetFramePacingAdjustment()
 	{
-		constexpr int kLowWaterFrames = AX_SAMPLES_PER_3MS_48KHZ * 4 * 2;
-		constexpr int kHighWaterFrames = 48000 / 10;
+		constexpr int kUrgentWaterFrames = AX_SAMPLES_PER_3MS_48KHZ * 8; // 1152 frames (24 ms)
+		constexpr int kLowWaterFrames = AX_SAMPLES_PER_3MS_48KHZ * 16;   // 2304 frames (48 ms)
+		constexpr int kHighWaterFrames = 48000 / 8;                      // 6000 frames (125 ms)
 		static bool s_deviceActive = false;
 		int queued = audio::queued_frames();
 		if (queued > 0)
 			s_deviceActive = true;
 		if (!s_deviceActive)
 			return 0;
+		if (queued < kUrgentWaterFrames)
+			return -2;
 		if (queued < kLowWaterFrames)
 			return -1;
 		if (queued > kHighWaterFrames)
