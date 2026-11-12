@@ -10,6 +10,7 @@ extern int g_run_seconds;
 extern int g_target_fps;
 #include <atomic>
 extern std::atomic<uint64_t> g_game_frames;  // GX2SwapScanBuffers calls (watchdog)
+extern std::atomic<bool> g_boot_world_ready;  // 3D world settled after boot; delays 60fps unlock until after world init
 extern uint64_t g_trace_from, g_trace_to;
 
 namespace os {

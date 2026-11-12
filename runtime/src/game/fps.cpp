@@ -21,7 +21,8 @@ double g_dt[kAvgFrames];
 int g_dt_n = 0;
 bool g_cap30 = false;      // a cutscene that must run at 30 fps is playing
 uint32_t g_cap_event = 0;  // its event id
-bool fps60() { return g_target_fps >= 60; }
+// Guard cold-boot / initial world load at 30 fps so BotW's one-time boot lighting/water state initializes cleanly.
+bool fps60() { return g_target_fps >= 60 && g_boot_world_ready.load(std::memory_order_acquire); }
 
 void data_patches() {
     mem::wf32(0x100775ac, -999.0f);  // Thunderblight Ganon gets thrown off the arena at high fps

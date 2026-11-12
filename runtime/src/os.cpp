@@ -11,6 +11,7 @@
 #include "thread.h"
 
 std::atomic<uint64_t> g_game_frames{0};
+std::atomic<bool> g_boot_world_ready{false};
 
 namespace os {
 namespace {

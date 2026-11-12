@@ -11,6 +11,7 @@
 #include "../src/host/menu.h"
 #include "../src/host/touch.h"
 #include "../src/host/touch_draw.h"
+#include "../src/os.h"
 #include "../src/settings.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 
@@ -31,6 +32,18 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
     g_gpu_thread = pthread_self();  // stats are updated on the GPU thread
     g_fps = (float)fps;
     g_draws = drawcalls;
+    if (!g_boot_world_ready.load(std::memory_order_relaxed)) {
+        static int s_world_ticks = 0;
+        // Title/loading screens stay <= ~150 draws/frame; 3D overworld/shrines sustain >= 600.
+        if (fps > 0.0 && drawcalls >= 600) {
+            if (++s_world_ticks >= 3) {
+                g_boot_world_ready.store(true, std::memory_order_release);
+                log_write("fps: 3D world ready (%d draws/frame), unlocking 60 fps", drawcalls);
+            }
+        } else {
+            s_world_ticks = 0;
+        }
+    }
     static int n = 0;
     if (fps > 0 && (n++ % 5) == 0)
         log_write("[gpu] %.1f fps, %d draws/frame (%d fast); main thread waits: %s", fps, drawcalls, fastDrawcalls,
