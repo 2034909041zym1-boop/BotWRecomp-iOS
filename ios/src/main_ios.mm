@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "log.h"
+#include "os.h"
 
 int botw_main(int argc, char** argv);
 
@@ -58,8 +59,9 @@ void start_stats_thread(std::string device) {
             std::this_thread::sleep_for(std::chrono::seconds(first ? 2 : 10));
             if (first) LOG("%s", device.c_str());  // the log file is open by now
             first = false;
-            LOG("ios: footprint %llu MB, available before jetsam %llu MB",
-                (unsigned long long)(footprint_bytes() >> 20), (unsigned long long)(os_proc_available_memory() >> 20));
+            LOG("ios: footprint %llu MB, available before jetsam %llu MB, thermal %s, lowPower %d",
+                (unsigned long long)(footprint_bytes() >> 20), (unsigned long long)(os_proc_available_memory() >> 20),
+                botw_thermal_state_name(botw_thermal_state()), (int)botw_low_power_mode());
         }
     }).detach();
 }

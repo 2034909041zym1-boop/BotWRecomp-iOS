@@ -12,6 +12,9 @@
 
 std::atomic<uint64_t> g_game_frames{0};
 std::atomic<bool> g_boot_world_ready{false};
+std::atomic<uint64_t> g_gpu_hw_time_us{0};
+
+extern "C" void botw_record_gpu_time_us(uint64_t us) { g_gpu_hw_time_us.fetch_add(us, std::memory_order_relaxed); }
 
 namespace os {
 namespace {

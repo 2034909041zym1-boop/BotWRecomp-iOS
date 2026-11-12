@@ -29,6 +29,7 @@
 
 extern "C" bool botw_is_background();
 extern "C" void botw_wait_while_background();
+extern "C" void botw_record_gpu_time_us(uint64_t us);
 
 namespace {
 struct ScopedAutoreleasePool
@@ -1999,7 +2000,14 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
         if (status != MTL::CommandBufferStatusCompleted && status != MTL::CommandBufferStatusError)
             break;
 
-        if (status == MTL::CommandBufferStatusError)
+        if (status == MTL::CommandBufferStatusCompleted)
+        {
+            double gs = entry.buffer->GPUStartTime();
+            double ge = entry.buffer->GPUEndTime();
+            if (gs > 0.0 && ge > gs)
+                botw_record_gpu_time_us((uint64_t)((ge - gs) * 1000000.0));
+        }
+        else if (status == MTL::CommandBufferStatusError)
         {
             ScopedAutoreleasePool pool;
             const char* desc = (entry.buffer->error() && entry.buffer->error()->localizedDescription())

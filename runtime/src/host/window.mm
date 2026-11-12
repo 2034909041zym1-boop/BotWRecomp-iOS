@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstring>
 #include <mutex>
 #include <vector>
 
@@ -28,8 +29,41 @@ extern "C" int g_trace_hle;
 
 static std::atomic<bool> g_app_in_background{false};
 static std::atomic<bool> g_app_terminating{false};
+static std::atomic<int> g_thermal_state{0};
+static std::atomic<bool> g_low_power_mode{false};
 static std::mutex g_bg_lock;
 static std::condition_variable g_bg_cv;
+
+extern "C" int botw_thermal_state() { return g_thermal_state.load(std::memory_order_relaxed); }
+
+extern "C" const char* botw_thermal_state_name(int state) {
+    switch (state) {
+    case 0: return "T0(Nom)";
+    case 1: return "T1(Fair)";
+    case 2: return "T2(Hot)";
+    case 3: return "T3(Crit)";
+    default: return "T?(Unk)";
+    }
+}
+
+extern "C" bool botw_low_power_mode() { return g_low_power_mode.load(std::memory_order_relaxed); }
+
+static void refresh_thermal_state(const char* reason) {
+    int prev_t = g_thermal_state.load(std::memory_order_relaxed);
+    bool prev_lp = g_low_power_mode.load(std::memory_order_relaxed);
+    int cur_t = prev_t;
+    bool cur_lp = prev_lp;
+    NSProcessInfo* pi = NSProcessInfo.processInfo;
+    if (@available(iOS 11.0, macOS 10.10.3, *)) cur_t = (int)pi.thermalState;
+    if (@available(iOS 9.0, macOS 12.0, *)) cur_lp = pi.isLowPowerModeEnabled;
+    g_thermal_state.store(cur_t, std::memory_order_relaxed);
+    g_low_power_mode.store(cur_lp, std::memory_order_relaxed);
+    if (reason && (strcmp(reason, "init") == 0 || cur_t != prev_t || cur_lp != prev_lp ||
+                   strncmp(reason, "bg:", 3) == 0 || strncmp(reason, "fg:", 3) == 0)) {
+        LOG("thermal [%s]: %s -> %s, lowPower=%d", reason, botw_thermal_state_name(prev_t),
+            botw_thermal_state_name(cur_t), (int)cur_lp);
+    }
+}
 
 extern "C" bool botw_is_background() {
     return g_app_in_background.load(std::memory_order_acquire);
@@ -54,6 +88,7 @@ static void set_background_state(bool bg, const char* source) {
     if (!changed) return;
     g_bg_cv.notify_all();
     LOG("app %s (%s)", bg ? "entered the background" : "returning to the foreground", source);
+    refresh_thermal_state(bg ? "bg:enter" : "fg:return");
     if (!bg) latte::notify_foreground();
 }
 
@@ -123,6 +158,23 @@ static void install_lifecycle_observers() {
                                       g_bg_cv.notify_all();
                                   }]];
 #endif
+    refresh_thermal_state("init");
+    static id thermTok = [NSNotificationCenter.defaultCenter addObserverForName:NSProcessInfoThermalStateDidChangeNotification
+                                                                         object:nil
+                                                                          queue:nil
+                                                                     usingBlock:^(NSNotification*) {
+                                                                         refresh_thermal_state("thermal_did_change");
+                                                                     }];
+    (void)thermTok;
+    if (@available(iOS 9.0, macOS 12.0, *)) {
+        static id lpTok = [NSNotificationCenter.defaultCenter addObserverForName:NSProcessInfoPowerStateDidChangeNotification
+                                                                           object:nil
+                                                                            queue:nil
+                                                                       usingBlock:^(NSNotification*) {
+                                                                           refresh_thermal_state("power_state_change");
+                                                                       }];
+        (void)lpTok;
+    }
 }
 
 namespace window {

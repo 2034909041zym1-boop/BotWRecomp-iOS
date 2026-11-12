@@ -4,9 +4,9 @@
 #include <imgui.h>
 
 #include <algorithm>
-#include <pthread.h>
-
 #include <atomic>
+#include <chrono>
+#include <pthread.h>
 
 #include "../src/host/menu.h"
 #include "../src/host/touch.h"
@@ -23,6 +23,8 @@ std::string main_wait_report();
 namespace {
 std::atomic<float> g_fps{0};
 std::atomic<int> g_draws{0};
+std::atomic<float> g_gpu_ms_per_frame{0};
+std::atomic<float> g_gpu_us_per_draw{0};
 }  // namespace
 
 // Cemu's GPU thread (LatteThread), for the host loop's slow-frame sampler (window.mm).
@@ -32,6 +34,19 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
     g_gpu_thread = pthread_self();  // stats are updated on the GPU thread
     g_fps = (float)fps;
     g_draws = drawcalls;
+    using clock = std::chrono::steady_clock;
+    static auto s_prev_tp = clock::now();
+    auto now_tp = clock::now();
+    double dt_s = std::chrono::duration<double>(now_tp - s_prev_tp).count();
+    s_prev_tp = now_tp;
+    uint64_t gpu_us = g_gpu_hw_time_us.exchange(0, std::memory_order_relaxed);
+    double gpu_ms_f = 0.0, us_per_draw = 0.0;
+    if (dt_s > 0.05 && fps > 0.5) {
+        gpu_ms_f = ((double)gpu_us / 1000.0) / (fps * dt_s);
+        if (drawcalls > 0) us_per_draw = (gpu_ms_f * 1000.0) / (double)drawcalls;
+    }
+    g_gpu_ms_per_frame.store((float)gpu_ms_f, std::memory_order_relaxed);
+    g_gpu_us_per_draw.store((float)us_per_draw, std::memory_order_relaxed);
     if (!g_boot_world_ready.load(std::memory_order_relaxed)) {
         static int s_world_ticks = 0;
         // Title/loading screens stay <= ~150 draws/frame; 3D overworld/shrines sustain >= 600.
@@ -45,8 +60,10 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
         }
     }
     static int n = 0;
-    if (fps > 0 && (n++ % 5) == 0)
-        log_write("[gpu] %.1f fps, %d draws/frame (%d fast); main thread waits: %s", fps, drawcalls, fastDrawcalls,
+    if (fps > 0 && (n++ % 3) == 0)
+        log_write("[gpu] %.1f fps, %d draws/frame (%d fast), gpu_hw=%.2fms/f (%.2fus/d), %s lp=%d; main thread waits: %s",
+                  fps, drawcalls, fastDrawcalls, gpu_ms_f, us_per_draw,
+                  botw_thermal_state_name(botw_thermal_state()), (int)botw_low_power_mode(),
                   threads::main_wait_report().c_str());
 }
 
@@ -85,7 +102,11 @@ void LatteOverlay_render(bool padView) {
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.86f, 0.71f, 0.34f, 0.35f));
         if (ImGui::Begin("##fps", nullptr, overlay | ImGuiWindowFlags_NoInputs)) {
             ImGui::SetWindowFontScale(font_scale * 0.90f);
+            const char* th = botw_thermal_state_name(botw_thermal_state());
+            const char* lp = botw_low_power_mode() ? " LP" : "";
             ImGui::Text("%.0f FPS  ·  %d Draws", (double)g_fps, (int)g_draws);
+            ImGui::Text("GPU %.1fms (%.1fus/d) · %s%s", (double)g_gpu_ms_per_frame.load(std::memory_order_relaxed),
+                        (double)g_gpu_us_per_draw.load(std::memory_order_relaxed), th, lp);
         }
         ImGui::End();
         ImGui::PopStyleColor(1);
