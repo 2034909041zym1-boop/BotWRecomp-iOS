@@ -118,10 +118,7 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 		// get physical address of texture data
 		MPTR physAddr = (texRegister.word2.get_BASE_ADDRESS() << 8);
 		if (physAddr == MPTR_NULL)
-		{
-			g_renderer->texture_setLatteTexture(nullptr, textureIndex + glBackendBaseTexUnit);
 			continue; // invalid data
-		}
 		MPTR physMipAddr = (texRegister.word3.get_MIP_ADDRESS() << 8);
 
 		// word0
@@ -193,10 +190,7 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 			// view not found, create a new mapping which will also create a new texture if necessary
 			textureView = LatteTexture_CreateMapping(physAddr, physMipAddr, width, height, depth, pitch, tileMode, swizzle, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim, dim, isDepthSampler);
 			if (textureView == nullptr)
-			{
-				g_renderer->texture_setLatteTexture(nullptr, textureIndex + glBackendBaseTexUnit);
 				continue;
-			}
 			LatteGPUState.repeatTextureInitialization = true;
 		}
 

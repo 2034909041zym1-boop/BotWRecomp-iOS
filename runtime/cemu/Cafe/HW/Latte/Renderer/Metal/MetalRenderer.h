@@ -114,8 +114,7 @@ struct MetalState
     bool m_fboChanged = false;
 
     size_t m_vertexBufferOffsets[MAX_MTL_VERTEX_BUFFERS];
-    // PS base = 0, VS base = 32, GS base = 64 -> must cover GS_BASE + LATTE_NUM_MAX_TEX_UNITS (82 slots)
-    class LatteTextureViewMtl* m_textures[LATTE_CEMU_GS_TEX_UNIT_BASE + LATTE_NUM_MAX_TEX_UNITS] = {nullptr};
+    class LatteTextureViewMtl* m_textures[LATTE_NUM_MAX_TEX_UNITS * 3] = {nullptr};
     size_t m_uniformBufferOffsets[METAL_GENERAL_SHADER_TYPE_TOTAL][MAX_MTL_BUFFERS];
 
     MTL::Viewport m_viewport;
@@ -351,7 +350,6 @@ public:
     bool AcquireDrawable(bool mainWindow);
 
     bool CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader);
-    void NotifyTextureViewDeletion(class LatteTextureViewMtl* textureView);
     void BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader);
 
     void ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a);
