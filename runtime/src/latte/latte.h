@@ -39,6 +39,8 @@ void set_scanout_srgb(bool tv, bool srgb);
 void set_display_mode(int mode);
 // Output scaling filter: 0 bilinear, 1 bicubic, 2 hermite, 3 nearest
 void set_output_filter(int filter);
+// Post-process anti-aliasing: 0 off, 1 FXAA, 2 FXAA + CAS sharpen
+void set_aa_mode(int mode);
 void init();
 // --capture N: save the TV image every N frames as PNG into dir
 void set_capture(int every, const char* dir);

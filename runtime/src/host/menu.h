@@ -15,6 +15,7 @@ void activate();        // confirm button
 struct Row {
     std::string label, value;
     bool action = false;  // a button, not a setting
+    const char* section = nullptr;
 };
 struct View {
     bool open = false;

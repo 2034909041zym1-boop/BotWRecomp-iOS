@@ -6,18 +6,17 @@
 #include <string>
 
 struct Settings {
-    int fps = 60;          // 30 or 60
 #if TARGET_OS_IOS
+    int fps = 30;          // 30 or 60 (native 30 fps keeps A18 Pro cool and steady)
     float scale = 1;       // render scale (phones: native 720p); 0 = fit the display; applies at the next launch
-#else
-    float scale = 0;       // render scale; 0 = fit the display (takes effect at the next launch)
-#endif
-#if TARGET_OS_IOS
     int display = 1;       // 0 fit (letterbox), 1 stretch, 2 fill (crop)
 #else
+    int fps = 60;          // 30 or 60
+    float scale = 0;       // render scale; 0 = fit the display (takes effect at the next launch)
     int display = 0;       // 0 fit (letterbox), 1 stretch, 2 fill (crop)
 #endif
     int filter = 1;        // output scaling: 0 bilinear, 1 bicubic, 2 hermite, 3 nearest
+    int aa = 2;            // post-process AA: 0 off, 1 FXAA, 2 FXAA + CAS sharpen
     bool gyro = true;      // controller gyro -> GamePad motion
     bool rumble = true;
     int layout = 0;        // 0 Nintendo positions (A = right face button), 1 labels (A = bottom face button)

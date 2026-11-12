@@ -50,6 +50,12 @@ public:
 	static RendererOutputShader* s_hermit_shader;
 	static RendererOutputShader* s_hermit_shader_ud;
 
+	static RendererOutputShader* s_fxaa_shader;
+	static RendererOutputShader* s_fxaa_shader_ud;
+
+	static RendererOutputShader* s_fxaa_cas_shader;
+	static RendererOutputShader* s_fxaa_cas_shader_ud;
+
 	static std::string GetOpenGlVertexSource(bool render_upside_down);
 	static std::string GetVulkanVertexSource(bool render_upside_down);
 	static std::string GetMetalVertexSource(bool render_upside_down);
@@ -72,4 +78,6 @@ private:
 	static const std::string s_copy_shader_source_mtl;
 	static const std::string s_bicubic_shader_source_mtl;
 	static const std::string s_hermite_shader_source_mtl;
+	static const std::string s_fxaa_shader_source_mtl;
+	static const std::string s_fxaa_cas_shader_source_mtl;
 };

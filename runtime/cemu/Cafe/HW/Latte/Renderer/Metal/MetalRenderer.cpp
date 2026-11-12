@@ -503,8 +503,10 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
     else if (shader == RendererOutputShader::s_copy_shader_ud) shaderIndex = 3;
     else if (shader == RendererOutputShader::s_bicubic_shader_ud) shaderIndex = 4;
     else if (shader == RendererOutputShader::s_hermit_shader_ud) shaderIndex = 5;
-
-    uint8 shaderType = shaderIndex % 3;
+    else if (shader == RendererOutputShader::s_fxaa_shader) shaderIndex = 6;
+    else if (shader == RendererOutputShader::s_fxaa_shader_ud) shaderIndex = 7;
+    else if (shader == RendererOutputShader::s_fxaa_cas_shader) shaderIndex = 8;
+    else if (shader == RendererOutputShader::s_fxaa_cas_shader_ud) shaderIndex = 9;
 
     // Get the render pipeline state
     auto renderPipelineState = m_outputShaderCache->GetPipeline(shader, shaderIndex, m_state.m_usesSRGB);
@@ -514,15 +516,11 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
     renderCommandEncoder->setFragmentTexture(presentTexture, 0);
     renderCommandEncoder->setFragmentSamplerState((useLinearTexFilter ? m_linearSampler : m_nearestSampler), 0);
 
-    // Set uniforms
-    float outputSize[2] = {(float)imageWidth, (float)imageHeight};
-    switch (shaderType)
+    // Set uniforms (Hermite filter reads outputResolution at buffer(0))
+    if (shaderIndex == 2 || shaderIndex == 5)
     {
-    case 2:
+        float outputSize[2] = {(float)imageWidth, (float)imageHeight};
         renderCommandEncoder->setFragmentBytes(outputSize, sizeof(outputSize), 0);
-        break;
-    default:
-        break;
     }
 
     renderCommandEncoder->setViewport(MTL::Viewport{(double)imageX, (double)imageY, (double)imageWidth, (double)imageHeight, 0.0, 1.0});

@@ -16,15 +16,16 @@ std::mutex g_lock;
 std::atomic<bool> g_open{false};
 int g_cursor = 0;
 
-enum RowId { kFps, kScale, kDisplay, kFilter, kGyro, kRumble, kLayout, kTouch, kShowFps, kVolume, kClose, kRows };
+enum RowId { kFps, kScale, kAA, kFilter, kDisplay, kShowFps, kGyro, kRumble, kLayout, kTouch, kVolume, kClose, kRows };
 const float kScales[] = {0, 0.5f, 0.75f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the display
-const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (轻微裁剪)"};
+const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (裁剪)"};
 const char* kFilters[] = {"双线性 (Bilinear)", "双三次 (Bicubic)", "埃尔米特 (Hermite)", "邻近采样 (Nearest)"};
+const char* kAAModes[] = {"关闭 (原生)", "FXAA 抗锯齿", "FXAA + CAS 锐化"};
 
 std::string scale_text(float s) {
     char b[64];
     if (s <= 0) return "自动 (适配屏幕)";
-    snprintf(b, sizeof b, "%gx  (%dx%d)", s, (int)lroundf(1280 * s), (int)lroundf(720 * s));
+    snprintf(b, sizeof b, "%gx (%dx%d)", s, (int)lroundf(1280 * s), (int)lroundf(720 * s));
     return b;
 }
 
@@ -39,6 +40,7 @@ void step(Settings& s, int row, int dir) {
             s.scale = kScales[wrap(i + dir, (int)std::size(kScales))];
             break;
         }
+        case kAA: s.aa = wrap(s.aa + dir, 3); break;
         case kDisplay: s.display = wrap(s.display + dir, 3); break;
         case kFilter: s.filter = wrap(s.filter + dir, 4); break;
         case kGyro: s.gyro = !s.gyro; break;
@@ -137,21 +139,22 @@ View view() {
         v.cursor = g_cursor;
     }
     Settings s = settings::get();
-    char b[64];
+    char b[128];
     v.rows.resize(kRows);
-    v.rows[kFps] = {"帧率", s.fps >= 60 ? "60 帧" : "30 帧 (原版)"};
+    v.rows[kFps] = {"帧率模式", s.fps >= 60 ? "60 帧 (高负载)" : "30 帧 (流畅省电)", false, "画质与性能"};
     v.rows[kScale] = {"渲染分辨率", scale_text(s.scale)};
+    v.rows[kAA] = {"抗锯齿", kAAModes[std::clamp(s.aa, 0, 2)]};
+    v.rows[kFilter] = {"缩放滤镜", s.aa > 0 ? "由抗锯齿接管" : kFilters[std::clamp(s.filter, 0, 3)]};
     v.rows[kDisplay] = {"画面比例", kDisplays[std::clamp(s.display, 0, 2)]};
-    v.rows[kFilter] = {"图像滤镜", kFilters[std::clamp(s.filter, 0, 3)]};
-    v.rows[kGyro] = {"体感瞄准", s.gyro ? "开启" : "关闭"};
+    v.rows[kShowFps] = {"性能角标", s.show_fps ? "开启" : "关闭"};
+    v.rows[kGyro] = {"体感瞄准", s.gyro ? "开启" : "关闭", false, "操控与音频"};
     v.rows[kRumble] = {"手柄震动", s.rumble ? "开启" : "关闭"};
-    v.rows[kLayout] = {"按键映射", s.layout ? "Xbox布局 (A在下/确认)" : "任天堂布局 (A在右/确认)"};
-    v.rows[kTouch] = {"触控虚拟按键", s.touch == 1 ? "常开" : s.touch == 2 ? "关闭" : "自动 (连接手柄隐藏)"};
-    v.rows[kShowFps] = {"显示帧率", s.show_fps ? "开启" : "关闭"};
+    v.rows[kLayout] = {"按键布局", s.layout ? "Xbox (A在下)" : "任天堂 (A在右)"};
+    v.rows[kTouch] = {"虚拟按键", s.touch == 1 ? "常开" : s.touch == 2 ? "关闭" : "自动 (连手柄隐藏)"};
     snprintf(b, sizeof b, "%d%%", s.volume);
-    v.rows[kVolume] = {"音量", b};
-    v.rows[kClose] = {"关闭菜单", "", true};
-    snprintf(b, sizeof b, "当前以 %gx 渲染；分辨率改动将在重启后生效。", g_render_scale);
+    v.rows[kVolume] = {"游戏音量", b};
+    v.rows[kClose] = {"关闭设置菜单", "", true};
+    snprintf(b, sizeof b, "当前以 %gx 渲染  ·  分辨率改动将在重启后生效，其余选项实时生效", g_render_scale);
     v.note = b;
     return v;
 }

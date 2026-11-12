@@ -975,6 +975,21 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 
 			filter = LatteTextureView::MagFilter::kNearestNeighbor;
 		}
+
+		if (!isPadView && g_renderer->GetType() == RendererAPI::Metal)
+		{
+			const int aa = GetConfig().aa_mode;
+			if (aa == 1)
+			{
+				shader = renderUpsideDown ? RendererOutputShader::s_fxaa_shader_ud : RendererOutputShader::s_fxaa_shader;
+				filter = LatteTextureView::MagFilter::kLinear;
+			}
+			else if (aa >= 2)
+			{
+				shader = renderUpsideDown ? RendererOutputShader::s_fxaa_cas_shader_ud : RendererOutputShader::s_fxaa_cas_shader;
+				filter = LatteTextureView::MagFilter::kLinear;
+			}
+		}
 	}
 	cemu_assert(shader);
 	g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);

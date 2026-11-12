@@ -26,6 +26,7 @@ struct CemuConfig {
     float userDisplayGamma = 2.2f;
     int upscale_filter = kBicubicFilter;
     int downscale_filter = kLinearFilter;
+    int aa_mode = 2;  // 0: off, 1: FXAA, 2: FXAA + CAS sharpen
     int fullscreen_scaling = kKeepAspectRatio;
     ConfigValue<bool> framebuffer_fetch{true};
     ConfigValue<bool> force_mesh_shaders{false};

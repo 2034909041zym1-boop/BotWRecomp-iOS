@@ -203,7 +203,7 @@ float3 BicubicHermiteTexture(texture2d<float> textureSrc, sampler samplr, float2
 	float2 frac = fract(pixel);
     pixel = floor(pixel) / texelSize.zw - float2(texelSize.xy/2.0);
 
-	float4 doubleSize = texelSize*texelSize;
+	float4 doubleSize = texelSize*2.0;
 
 	float3 C00 = textureSrc.sample(samplr, pixel + float2(-texelSize.x ,-texelSize.y)).rgb;
     float3 C10 = textureSrc.sample(samplr, pixel + float2( 0.0        ,-texelSize.y)).rgb;
@@ -239,8 +239,97 @@ struct VertexOut {
 };
 
 fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]], constant float2& outputResolution [[buffer(0)]]) {
-	float4 texelSize = float4(1.0 / outputResolution.xy, outputResolution.xy);
+	float2 textureSrcResolution = float2(textureSrc.get_width(), textureSrc.get_height());
+	float4 texelSize = float4(1.0 / textureSrcResolution, textureSrcResolution);
 	return float4(BicubicHermiteTexture(textureSrc, samplr, in.uv, texelSize), 1.0);
+}
+)";
+
+static const char* kFxaaCommonMtl =
+R"(#include <metal_stdlib>
+using namespace metal;
+
+struct VertexOut {
+    float4 position [[position]];
+    float2 uv;
+};
+
+static inline float fxaaLuma(float3 c) {
+    return dot(c, float3(0.299f, 0.587f, 0.114f));
+}
+
+static inline float4 sampleFXAA(texture2d<float> tex, sampler s, float2 uv, float2 rcpFrame) {
+    float3 rgbM  = tex.sample(s, uv).rgb;
+    float3 rgbNW = tex.sample(s, uv + float2(-1.0f, -1.0f) * rcpFrame).rgb;
+    float3 rgbNE = tex.sample(s, uv + float2( 1.0f, -1.0f) * rcpFrame).rgb;
+    float3 rgbSW = tex.sample(s, uv + float2(-1.0f,  1.0f) * rcpFrame).rgb;
+    float3 rgbSE = tex.sample(s, uv + float2( 1.0f,  1.0f) * rcpFrame).rgb;
+
+    float lumaM  = fxaaLuma(rgbM);
+    float lumaNW = fxaaLuma(rgbNW);
+    float lumaNE = fxaaLuma(rgbNE);
+    float lumaSW = fxaaLuma(rgbSW);
+    float lumaSE = fxaaLuma(rgbSE);
+
+    float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+    float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+    float range = lumaMax - lumaMin;
+
+    if (range < max(0.0416f, lumaMax * 0.125f)) {
+        return float4(rgbM, 0.0f);
+    }
+
+    float2 dir;
+    dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+    dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+
+    float dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * 0.03125f, 1.0f / 128.0f);
+    float rcpDirMin = 1.0f / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+    dir = clamp(dir * rcpDirMin, float2(-8.0f), float2(8.0f)) * rcpFrame;
+
+    float3 rgbA = 0.5f * (
+        tex.sample(s, uv + dir * (1.0f / 3.0f - 0.5f)).rgb +
+        tex.sample(s, uv + dir * (2.0f / 3.0f - 0.5f)).rgb);
+    float3 rgbB = rgbA * 0.5f + 0.25f * (
+        tex.sample(s, uv + dir * -0.5f).rgb +
+        tex.sample(s, uv + dir *  0.5f).rgb);
+
+    float lumaB = fxaaLuma(rgbB);
+    float3 res = (lumaB < lumaMin || lumaB > lumaMax) ? rgbA : rgbB;
+    return float4(res, clamp(range * 2.5f, 0.0f, 1.0f));
+}
+)";
+
+const std::string RendererOutputShader::s_fxaa_shader_source_mtl = std::string(kFxaaCommonMtl) +
+R"(
+fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
+    float2 rcpFrame = float2(1.0f) / float2(textureSrc.get_width(), textureSrc.get_height());
+    return float4(sampleFXAA(textureSrc, samplr, in.uv, rcpFrame).rgb, 1.0f);
+}
+)";
+
+const std::string RendererOutputShader::s_fxaa_cas_shader_source_mtl = std::string(kFxaaCommonMtl) +
+R"(
+fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
+    float2 rcpFrame = float2(1.0f) / float2(textureSrc.get_width(), textureSrc.get_height());
+    float4 aa = sampleFXAA(textureSrc, samplr, in.uv, rcpFrame);
+    float3 c = aa.rgb;
+
+    float3 n = textureSrc.sample(samplr, in.uv + float2( 0.0f, -1.0f) * rcpFrame).rgb;
+    float3 s = textureSrc.sample(samplr, in.uv + float2( 0.0f,  1.0f) * rcpFrame).rgb;
+    float3 w = textureSrc.sample(samplr, in.uv + float2(-1.0f,  0.0f) * rcpFrame).rgb;
+    float3 e = textureSrc.sample(samplr, in.uv + float2( 1.0f,  0.0f) * rcpFrame).rgb;
+
+    float3 mn = min(min(n, s), min(w, e));
+    float3 mx = max(max(n, s), max(w, e));
+    mn = min(mn, c);
+    mx = max(mx, c);
+
+    float3 amp = clamp(min(mn, float3(1.0f) - mx) / max(mx, float3(1e-5f)), float3(0.0f), float3(1.0f));
+    amp = sqrt(amp);
+    float3 weight = amp * (-0.145f * (1.0f - 0.55f * aa.a));
+    float3 sharpened = clamp((c + (n + s + w + e) * weight) / (float3(1.0f) + 4.0f * weight), float3(0.0f), float3(1.0f));
+    return float4(sharpened, 1.0f);
 }
 )";
 
@@ -299,6 +388,12 @@ RendererOutputShader* RendererOutputShader::s_bicubic_shader_ud;
 
 RendererOutputShader* RendererOutputShader::s_hermit_shader;
 RendererOutputShader* RendererOutputShader::s_hermit_shader_ud;
+
+RendererOutputShader* RendererOutputShader::s_fxaa_shader;
+RendererOutputShader* RendererOutputShader::s_fxaa_shader_ud;
+
+RendererOutputShader* RendererOutputShader::s_fxaa_cas_shader;
+RendererOutputShader* RendererOutputShader::s_fxaa_cas_shader_ud;
 
 std::string RendererOutputShader::GetOpenGlVertexSource(bool render_upside_down)
 {
@@ -508,6 +603,12 @@ void RendererOutputShader::InitializeStatic()
 
        	s_hermit_shader = new RendererOutputShader(vertex_source, s_hermite_shader_source_mtl);
        	s_hermit_shader_ud = new RendererOutputShader(vertex_source_ud, s_hermite_shader_source_mtl);
+
+       	s_fxaa_shader = new RendererOutputShader(vertex_source, s_fxaa_shader_source_mtl);
+       	s_fxaa_shader_ud = new RendererOutputShader(vertex_source_ud, s_fxaa_shader_source_mtl);
+
+       	s_fxaa_cas_shader = new RendererOutputShader(vertex_source, s_fxaa_cas_shader_source_mtl);
+       	s_fxaa_cas_shader_ud = new RendererOutputShader(vertex_source_ud, s_fxaa_cas_shader_source_mtl);
 		break;
     }
 #endif
@@ -562,4 +663,10 @@ void RendererOutputShader::ShutdownStatic()
 
 	delete s_hermit_shader;
 	delete s_hermit_shader_ud;
+
+	delete s_fxaa_shader;
+	delete s_fxaa_shader_ud;
+
+	delete s_fxaa_cas_shader;
+	delete s_fxaa_cas_shader_ud;
 }

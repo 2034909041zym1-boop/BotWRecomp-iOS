@@ -41,7 +41,9 @@ void LatteOverlay_render(bool padView) {
     if (padView) return;
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
-    const float ui = std::max(1.0f, io.DisplaySize.y / 540.0f);  // the built-in font is 13 px
+    const float ui = std::max(1.0f, io.DisplaySize.y / 540.0f);
+    // Font atlas is baked at 36 px (imgui_font.mm); scale relative to 36 px so Retina text is razor-sharp.
+    const float font_scale = (14.5f * ui) / 36.0f;
 
     float px, py;
     bool down;
@@ -64,49 +66,106 @@ void LatteOverlay_render(bool padView) {
                     pos = {it.x * k, (it.y + it.r + 10 * ts.u) * k}, pivot = {0.5f, 0.0f};
                 }
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
-        ImGui::SetNextWindowBgAlpha(0.45f);
+        ImGui::SetNextWindowBgAlpha(0.58f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f * ui);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {10.0f * ui, 5.0f * ui});
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.86f, 0.71f, 0.34f, 0.35f));
         if (ImGui::Begin("##fps", nullptr, overlay | ImGuiWindowFlags_NoInputs)) {
-            ImGui::SetWindowFontScale(ui);
-            ImGui::Text("%.0f fps  %d draws", (double)g_fps, (int)g_draws);
+            ImGui::SetWindowFontScale(font_scale * 0.90f);
+            ImGui::Text("%.0f FPS  ·  %d Draws", (double)g_fps, (int)g_draws);
         }
         ImGui::End();
+        ImGui::PopStyleColor(1);
+        ImGui::PopStyleVar(2);
     }
 
     menu::View v = menu::view();
     if (!v.open) touch::draw();
     if (!v.open) return;
+
     ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_Always, {0.5f, 0.5f});
-    ImGui::SetNextWindowBgAlpha(0.88f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f * ui);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f * ui);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {20.0f * ui, 14.0f * ui});
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f * ui);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {8.0f * ui, 4.0f * ui});
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {8.0f * ui, 4.5f * ui});
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.08f, 0.11f, 0.93f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.86f, 0.71f, 0.34f, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.86f, 0.71f, 0.34f, 0.28f));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16f, 0.21f, 0.29f, 0.92f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.27f, 0.17f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.45f, 0.38f, 0.19f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.86f, 0.71f, 0.34f, 0.20f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.86f, 0.71f, 0.34f, 0.28f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.86f, 0.71f, 0.34f, 0.36f));
+
     if (ImGui::Begin("##menu", nullptr, overlay)) {
-        ImGui::SetWindowFontScale(ui * 1.25f);
-        const float label_w = 150 * ui, value_w = 240 * ui;
-        ImGui::TextUnformatted("旷野之息 设置");
-        const float xs = ImGui::GetFrameHeight();  // X in the top-right corner
-        ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x - xs);
-        if (ImGui::Button("X", {xs, xs})) menu::close();
+        const float label_w = 135.0f * ui;
+        const float btn_w = 34.0f * ui;
+        const float val_w = 195.0f * ui;
+        const float row_w = label_w + btn_w + val_w + btn_w + 18.0f * ui;
+
+        ImGui::SetWindowFontScale(font_scale * 1.15f);
+        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.42f, 1.0f), "塞尔达传说：旷野之息 · 设置");
+        const float close_w = 52.0f * ui;
+        const float close_h = ImGui::GetFrameHeight();
+        ImGui::SameLine(ImGui::GetStyle().WindowPadding.x + row_w - close_w);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.32f, 0.15f, 0.17f, 0.88f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.20f, 0.22f, 0.96f));
+        if (ImGui::Button("关闭", {close_w, close_h})) menu::close();
+        ImGui::PopStyleColor(2);
         const ImVec2 xa = ImGui::GetItemRectMin(), xb = ImGui::GetItemRectMax();
+
+        ImGui::Spacing();
         ImGui::Separator();
+
         for (int i = 0; i < (int)v.rows.size(); i++) {
             const menu::Row& r = v.rows[i];
-            ImGui::PushID(i);
-            bool sel = i == v.cursor;
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 215, 90, 255));
-            if (ImGui::Selectable(r.label.c_str(), sel, 0, {r.action ? label_w + value_w : label_w, 0})) menu::click(i, 0);
-            if (!r.action) {
-                ImGui::SameLine();
-                if (ImGui::ArrowButton("##l", ImGuiDir_Left)) menu::click(i, -1);
-                ImGui::SameLine();
-                ImGui::TextUnformatted(r.value.c_str());
-                ImGui::SameLine(label_w + value_w + 24 * ui);
-                if (ImGui::ArrowButton("##r", ImGuiDir_Right)) menu::click(i, +1);
+            if (r.section) {
+                ImGui::Spacing();
+                ImGui::SetWindowFontScale(font_scale * 0.84f);
+                ImGui::TextColored(ImVec4(0.54f, 0.80f, 0.90f, 0.92f), "%s", r.section);
             }
-            if (sel) ImGui::PopStyleColor();
+            ImGui::SetWindowFontScale(font_scale);
+            ImGui::PushID(i);
+            const bool sel = i == v.cursor;
+            const float cur_h = ImGui::GetFrameHeight();
+            if (r.action) {
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.28f, 0.36f, 0.92f));
+                if (ImGui::Button(r.label.c_str(), {row_w, cur_h * 1.05f})) menu::click(i, 0);
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::AlignTextToFramePadding();
+                if (sel) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.84f, 0.44f, 1.0f));
+                if (ImGui::Selectable(r.label.c_str(), sel, 0, {label_w, cur_h})) menu::click(i, 0);
+                if (sel) ImGui::PopStyleColor();
+
+                ImGui::SameLine(0, 6.0f * ui);
+                if (ImGui::Button("<", {btn_w, cur_h})) menu::click(i, -1);
+
+                ImGui::SameLine(0, 6.0f * ui);
+                const float vx0 = ImGui::GetCursorPosX();
+                const float tw = ImGui::CalcTextSize(r.value.c_str()).x;
+                const float offset_x = std::max(0.0f, (val_w - tw) * 0.5f);
+                ImGui::SetCursorPosX(vx0 + offset_x);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextColored(sel ? ImVec4(1.0f, 0.96f, 0.84f, 1.0f) : ImVec4(0.88f, 0.91f, 0.95f, 1.0f), "%s", r.value.c_str());
+
+                ImGui::SameLine(vx0 + val_w + 6.0f * ui);
+                if (ImGui::Button(">", {btn_w, cur_h})) menu::click(i, +1);
+            }
             ImGui::PopID();
         }
+
+        ImGui::Spacing();
         ImGui::Separator();
-        ImGui::SetWindowFontScale(ui);
-        ImGui::TextUnformatted(v.note.c_str());
-        ImGui::TextUnformatted("方向键: 选择/调节   A: 确认   B/触摸板/点击外部/右上角X: 关闭");
+        ImGui::SetWindowFontScale(font_scale * 0.82f);
+        ImGui::TextColored(ImVec4(0.75f, 0.82f, 0.88f, 0.95f), "%s", v.note.c_str());
+        ImGui::TextColored(ImVec4(0.58f, 0.65f, 0.72f, 0.90f), "点击左右箭头或选项切换  ·  方向键选择 / A确认 / B或点外部关闭");
+
         // for touch (host side, see menu::touch_close): panel and X in fractions of the screen
         const ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize(), d = io.DisplaySize;
         const float panel[4] = {wp.x / d.x, wp.y / d.y, (wp.x + ws.x) / d.x, (wp.y + ws.y) / d.y};
@@ -114,4 +173,6 @@ void LatteOverlay_render(bool padView) {
         menu::set_rects(panel, xbtn);
     }
     ImGui::End();
+    ImGui::PopStyleColor(9);
+    ImGui::PopStyleVar(6);
 }
