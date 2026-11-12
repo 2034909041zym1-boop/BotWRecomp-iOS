@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: generated
-          key: generated-${{ runner.os }}-${{ hashFiles('U-King.rpx', 'cafe/*.py', 'tools/recompile.py') }}
+          key: generated-${{ runner.os }}-${{ hashFiles('U-King.rpx', 'cafe/*.py', 'tools/recompile.py', 'runtime/src/game/*.cpp') }}
 
       - name: Generate C++ Code (if not present)
         run: |
