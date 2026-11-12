@@ -27,7 +27,16 @@
 #include "imgui/imgui_extension.h"
 #include "imgui/imgui_impl_metal.h"
 
-#define EVENT_VALUE_WRAP 4096
+extern "C" bool botw_is_background();
+extern "C" void botw_wait_while_background();
+
+namespace {
+struct ScopedAutoreleasePool
+{
+    NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+    ~ScopedAutoreleasePool() { pool->release(); }
+};
+}  // namespace
 
 extern bool hasValidFramebufferAttached;
 
@@ -185,7 +194,7 @@ MetalRenderer::MetalRenderer() : Renderer(RendererAPI::Metal)
     m_commandQueue = m_device->newCommandQueue();
 
     // Synchronization resources
-    m_event = m_device->newEvent();
+    m_event = m_device->newSharedEvent();
 
     // Resources
     NS_STACK_SCOPED MTL::SamplerDescriptor* samplerDescriptor = MTL::SamplerDescriptor::alloc()->init();
@@ -384,8 +393,17 @@ void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
     if (swapDRC)
         SwapBuffer(false);
 
+    if (botw_is_background())
+    {
+        m_mainLayer.ReleaseDrawable();
+        m_padLayer.ReleaseDrawable();
+    }
+
     // Reset the command buffers (they are released by TemporaryBufferAllocator)
     CommitCommandBuffer();
+
+    if (botw_is_background())
+        botw_wait_while_background();
 
     // Debug
     m_performanceMonitor.ResetPerFrameData();
@@ -480,6 +498,8 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
     if (!AcquireDrawable(!padView))
         return;
 
+    ScopedAutoreleasePool pool;
+
     MTL::Texture* presentTexture = static_cast<LatteTextureViewMtl*>(texView)->GetRGBAView();
 
     // Create render pass
@@ -548,8 +568,11 @@ void MetalRenderer::Flush(bool waitIdle)
     if (m_recordedDrawcalls > 0 || waitIdle)
         CommitCommandBuffer();
 
-    if (waitIdle && m_executingCommandBuffers.size() != 0)
-        m_executingCommandBuffers.back()->waitUntilCompleted();
+    if (waitIdle && !m_executingCommandBuffers.empty())
+    {
+        m_executingCommandBuffers.back().buffer->waitUntilCompleted();
+        ProcessFinishedCommandBuffers();
+    }
 }
 
 void MetalRenderer::NotifyLatteCommandProcessorIdle()
@@ -574,6 +597,8 @@ bool MetalRenderer::ImguiBegin(bool mainWindow)
         ImGui_ImplMetal_CreateFontsTexture(m_device);
 
 	auto& layer = GetLayer(mainWindow);
+
+	ScopedAutoreleasePool pool;
 
 	// Render pass descriptor
 	NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
@@ -848,6 +873,8 @@ void MetalRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sl
     }
 
     auto mtlTexture = static_cast<LatteTextureMtl*>(hostTexture)->GetTexture();
+
+    ScopedAutoreleasePool pool;
 
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
     if (clearDepth)
@@ -1749,7 +1776,7 @@ MTL::CommandBuffer* MetalRenderer::GetCommandBuffer()
 		m_currentCommandBuffer = {mtlCommandBuffer};
 
 		// Wait for the previous command buffer
-		if (m_eventValue != -1)
+		if (m_eventValue > 0)
 		    mtlCommandBuffer->encodeWait(m_event, m_eventValue);
 
 		m_recordedDrawcalls = 0;
@@ -1930,51 +1957,67 @@ void MetalRenderer::CommitCommandBuffer()
 
     EndEncoding();
 
-    ProcessFinishedCommandBuffers();
-
     // Commit the command buffer
     if (!m_currentCommandBuffer.m_commited)
     {
-        // Handled differently, since it seems like Metal doesn't always call the completion handler
-        //commandBuffer.m_commandBuffer->addCompletedHandler(^(MTL::CommandBuffer*) {
-        //    m_memoryManager->GetTemporaryBufferAllocator().CommandBufferFinished(commandBuffer.m_commandBuffer);
-        //});
+        if (botw_is_background())
+        {
+            m_mainLayer.ReleaseDrawable();
+            m_padLayer.ReleaseDrawable();
+            botw_wait_while_background();
+        }
+
+        ProcessFinishedCommandBuffers();
 
         // Signal event
-        m_eventValue = (m_eventValue + 1) % EVENT_VALUE_WRAP;
+        m_eventValue++;
         auto mtlCommandBuffer = m_currentCommandBuffer.m_commandBuffer;
         mtlCommandBuffer->encodeSignalEvent(m_event, m_eventValue);
 
         mtlCommandBuffer->commit();
         m_currentCommandBuffer.m_commited = true;
 
-        m_executingCommandBuffers.push_back(mtlCommandBuffer);
+        m_executingCommandBuffers.push_back({mtlCommandBuffer, m_eventValue});
 
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
+    }
+    else
+    {
+        ProcessFinishedCommandBuffers();
     }
 }
 
 void MetalRenderer::ProcessFinishedCommandBuffers()
 {
-    // Check for finished command buffers
-    for (auto it = m_executingCommandBuffers.begin(); it != m_executingCommandBuffers.end();)
+    // Retire strictly in commit FIFO order so ring-allocator sync points never desynchronize.
+    size_t finishedCount = 0;
+    while (finishedCount < m_executingCommandBuffers.size())
     {
-        auto commandBuffer = *it;
-        if (CommandBufferCompleted(commandBuffer))
-        {
-            m_memoryManager->CleanupBuffers(commandBuffer);
-            commandBuffer->release();
-            it = m_executingCommandBuffers.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
-}
+        const auto& entry = m_executingCommandBuffers[finishedCount];
+        auto status = entry.buffer->status();
+        if (status != MTL::CommandBufferStatusCompleted && status != MTL::CommandBufferStatusError)
+            break;
 
-extern "C" bool botw_is_background();
+        if (status == MTL::CommandBufferStatusError)
+        {
+            ScopedAutoreleasePool pool;
+            const char* desc = (entry.buffer->error() && entry.buffer->error()->localizedDescription())
+                ? entry.buffer->error()->localizedDescription()->utf8String()
+                : "unknown Metal error";
+            cemuLog_log(LogType::Force, "Metal command buffer failed (signal {}): {}", entry.signalValue, desc ? desc : "unknown");
+            if (m_event && m_event->signaledValue() < entry.signalValue)
+                m_event->setSignaledValue(entry.signalValue);
+        }
+
+        m_memoryManager->CleanupBuffers(entry.buffer);
+        entry.buffer->release();
+        finishedCount++;
+    }
+
+    if (finishedCount > 0)
+        m_executingCommandBuffers.erase(m_executingCommandBuffers.begin(), m_executingCommandBuffers.begin() + finishedCount);
+}
 
 bool MetalRenderer::AcquireDrawable(bool mainWindow)
 {
@@ -2335,7 +2378,7 @@ void MetalRenderer::SwapBuffer(bool mainWindow)
 {
     if (botw_is_background())
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        GetLayer(mainWindow).ReleaseDrawable();
         return;
     }
 

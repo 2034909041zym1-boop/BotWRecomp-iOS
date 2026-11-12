@@ -10,6 +10,10 @@ class MetalLayerHandle
 public:
     MetalLayerHandle() = default;
     MetalLayerHandle(MTL::Device* device, const Vector2i& size, bool mainWindow);
+    MetalLayerHandle(const MetalLayerHandle&) = delete;
+    MetalLayerHandle& operator=(const MetalLayerHandle&) = delete;
+    MetalLayerHandle(MetalLayerHandle&& other) noexcept;
+    MetalLayerHandle& operator=(MetalLayerHandle&& other) noexcept;
 
     ~MetalLayerHandle();
 
@@ -18,6 +22,8 @@ public:
     bool AcquireDrawable();
 
     void PresentDrawable(MTL::CommandBuffer* commandBuffer);
+
+    void ReleaseDrawable();
 
     CA::MetalLayer* GetLayer() const { return m_layer; }
 

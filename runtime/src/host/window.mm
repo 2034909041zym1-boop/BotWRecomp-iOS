@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <mutex>
 #include <vector>
 
@@ -25,10 +26,103 @@ extern std::atomic<pthread_t> g_gpu_thread;  // cemu_shims/overlay_menu.cpp: Cem
 
 extern "C" int g_trace_hle;
 
-#include <atomic>
 static std::atomic<bool> g_app_in_background{false};
+static std::atomic<bool> g_app_terminating{false};
+static std::mutex g_bg_lock;
+static std::condition_variable g_bg_cv;
+
 extern "C" bool botw_is_background() {
-    return g_app_in_background.load(std::memory_order_relaxed);
+    return g_app_in_background.load(std::memory_order_acquire);
+}
+
+extern "C" void botw_wait_while_background() {
+    std::unique_lock<std::mutex> l(g_bg_lock);
+    g_bg_cv.wait(l, [] {
+        return !g_app_in_background.load(std::memory_order_acquire) || g_app_terminating.load(std::memory_order_acquire);
+    });
+}
+
+static void set_background_state(bool bg, const char* source) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> l(g_bg_lock);
+        if (g_app_in_background.load(std::memory_order_relaxed) != bg) {
+            g_app_in_background.store(bg, std::memory_order_release);
+            changed = true;
+        }
+    }
+    if (!changed) return;
+    g_bg_cv.notify_all();
+    LOG("app %s (%s)", bg ? "entered the background" : "returning to the foreground", source);
+    if (!bg) latte::notify_foreground();
+}
+
+static bool SDLCALL on_sdl_lifecycle_event(void*, SDL_Event* e) {
+    switch (e->type) {
+    case SDL_EVENT_WILL_ENTER_BACKGROUND:
+        set_background_state(true, "SDL will enter background");
+        break;
+    case SDL_EVENT_DID_ENTER_BACKGROUND:
+        set_background_state(true, "SDL did enter background");
+        break;
+    case SDL_EVENT_WILL_ENTER_FOREGROUND:
+        set_background_state(false, "SDL will enter foreground");
+        break;
+    case SDL_EVENT_DID_ENTER_FOREGROUND:
+        set_background_state(false, "SDL did enter foreground");
+        break;
+    case SDL_EVENT_QUIT:
+    case SDL_EVENT_TERMINATING:
+        g_app_terminating.store(true, std::memory_order_release);
+        g_bg_cv.notify_all();
+        break;
+    default:
+        break;
+    }
+    return true;
+}
+
+static void install_lifecycle_observers() {
+    static bool installed = false;
+    if (installed) return;
+    installed = true;
+    SDL_AddEventWatch(on_sdl_lifecycle_event, nullptr);
+#if TARGET_OS_IOS
+    struct LifecycleObs {
+        NSNotificationName name;
+        bool bg;
+        const char* label;
+    };
+    std::vector<LifecycleObs> obs = {
+        {UIApplicationWillResignActiveNotification, true, "UIApplicationWillResignActive"},
+        {UIApplicationDidEnterBackgroundNotification, true, "UIApplicationDidEnterBackground"},
+        {UIApplicationWillEnterForegroundNotification, false, "UIApplicationWillEnterForeground"},
+        {UIApplicationDidBecomeActiveNotification, false, "UIApplicationDidBecomeActive"},
+    };
+    if (@available(iOS 13.0, *)) {
+        obs.push_back({UISceneWillDeactivateNotification, true, "UISceneWillDeactivate"});
+        obs.push_back({UISceneDidEnterBackgroundNotification, true, "UISceneDidEnterBackground"});
+        obs.push_back({UISceneWillEnterForegroundNotification, false, "UISceneWillEnterForeground"});
+        obs.push_back({UISceneDidBecomeActiveNotification, false, "UISceneDidBecomeActive"});
+    }
+    static NSMutableArray* tokens = [NSMutableArray new];
+    NSNotificationCenter* nc = NSNotificationCenter.defaultCenter;
+    for (const auto& o : obs) {
+        const bool is_bg = o.bg;
+        const char* const src = o.label;
+        [tokens addObject:[nc addObserverForName:o.name
+                                          object:nil
+                                           queue:nil
+                                      usingBlock:^(NSNotification*) { set_background_state(is_bg, src); }]];
+    }
+    [tokens addObject:[nc addObserverForName:UIApplicationWillTerminateNotification
+                                      object:nil
+                                       queue:nil
+                                  usingBlock:^(NSNotification*) {
+                                      g_app_terminating.store(true, std::memory_order_release);
+                                      g_bg_cv.notify_all();
+                                  }]];
+#endif
 }
 
 namespace window {
@@ -39,7 +133,6 @@ std::atomic<uint64_t> g_frame{0};
 SDL_Gamepad* g_pad = nullptr;
 bool g_use_gyro = true;  // --no-gyro / settings
 bool g_use_rumble = true;
-bool g_background = false;  // iOS app lifecycle
 int g_layout = 0;  // 0: A = right face button (Nintendo positions), 1: A = bottom face button (labels)
 std::atomic<int> g_draw_w{1280}, g_draw_h{720};
 
@@ -262,6 +355,7 @@ void drawable_size(int* w, int* h) {
 
 void create() {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) LOG("SDL_Init failed: %s", SDL_GetError());
+    install_lifecycle_observers();
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_METAL | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     if (g_headless) flags |= SDL_WINDOW_HIDDEN;  // tests: render into a hidden window, never on screen
     g_win = SDL_CreateWindow("The Legend of Zelda: Breath of the Wild", 1280, 720, flags);
@@ -292,15 +386,15 @@ void run() {
     while (!g_quit) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) g_quit = true;
-            else if (e.type == SDL_EVENT_DID_ENTER_BACKGROUND || e.type == SDL_EVENT_WILL_ENTER_FOREGROUND) {
-                g_background = e.type == SDL_EVENT_DID_ENTER_BACKGROUND;
-                g_app_in_background.store(g_background, std::memory_order_relaxed);
-                LOG("app %s", g_background ? "entered the background" : "returning to the foreground");
-                if (!g_background) {
-                    latte::notify_foreground();
-                }
-            } else if (e.type == SDL_EVENT_TERMINATING) LOG("app terminating");
+            if (e.type == SDL_EVENT_QUIT) {
+                g_quit = true;
+                g_app_terminating.store(true, std::memory_order_release);
+                g_bg_cv.notify_all();
+            } else if (e.type == SDL_EVENT_TERMINATING) {
+                g_app_terminating.store(true, std::memory_order_release);
+                g_bg_cv.notify_all();
+                LOG("app terminating");
+            }
             else if (e.type == SDL_EVENT_GAMEPAD_ADDED && !g_pad) {
                 g_pad = SDL_OpenGamepad(e.gdevice.which);
                 if (g_pad) {
@@ -377,7 +471,7 @@ void run() {
         {
             static uint64_t seen = 0, changed_ms = 0, dumped_ms = 0;
             uint64_t ms = SDL_GetTicks(), gf = g_game_frames;
-            if (gf != seen || g_background) seen = gf, changed_ms = ms;
+            if (gf != seen || botw_is_background()) seen = gf, changed_ms = ms;
             else if (gf && ms - changed_ms > 8000 && (!dumped_ms || ms - dumped_ms > 60000)) {
                 LOG("watchdog: no game frame for %llu s (frame %llu), thread dump:", (unsigned long long)(ms - changed_ms) / 1000,
                     (unsigned long long)gf);
@@ -393,7 +487,7 @@ void run() {
             static int taken = 0;
             uint64_t ms = SDL_GetTicks(), gf = g_game_frames;
             if (ms - win_ms >= 1000) {
-                bool now_slow = !g_background && win_gf && gf - win_gf < 6;
+                bool now_slow = !botw_is_background() && win_gf && gf - win_gf < 6;
                 if (now_slow && !slow) LOG("slow: %llu game frames in the last second, sampling the GPU thread", (unsigned long long)(gf - win_gf));
                 slow = now_slow, win_ms = ms, win_gf = gf;
             }

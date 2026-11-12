@@ -246,21 +246,33 @@ void add_flip_request() {
     LatteGPUState.sharedArea->flipRequestCountBE = _swapEndianU32(_swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE) + 1);
 }
 extern "C" bool botw_is_background();
+extern "C" void botw_wait_while_background();
 
 void wait_for_flip() {
-    std::unique_lock<std::mutex> l(g_sync_lock);
-    if (botw_is_background()) return;
-    if (flip_requests() == flips_executed()) return;
-    g_flip_cv.wait_for(l, std::chrono::milliseconds(100));
+    {
+        std::unique_lock<std::mutex> l(g_sync_lock);
+        if (!botw_is_background()) {
+            if (flip_requests() == flips_executed()) return;
+            g_flip_cv.wait_for(l, std::chrono::milliseconds(100),
+                               [&] { return flip_requests() == flips_executed() || botw_is_background(); });
+        }
+    }
+    if (botw_is_background()) botw_wait_while_background();
 }
 void wait_for_vsync() {
-    std::unique_lock<std::mutex> l(g_sync_lock);
-    if (botw_is_background()) {
-        g_vsync_count++;
-        return;
+    {
+        std::unique_lock<std::mutex> l(g_sync_lock);
+        if (!botw_is_background()) {
+            uint64 v = g_vsync_count;
+            g_vsync_cv.wait_for(l, std::chrono::milliseconds(100),
+                                [&] { return g_vsync_count != v || botw_is_background(); });
+        }
     }
-    uint64 v = g_vsync_count;
-    g_vsync_cv.wait_for(l, std::chrono::milliseconds(100), [&] { return g_vsync_count != v || botw_is_background(); });
+    if (botw_is_background()) {
+        botw_wait_while_background();
+        std::lock_guard<std::mutex> l(g_sync_lock);
+        g_vsync_count++;
+    }
 }
 void notify_foreground() {
     std::lock_guard<std::mutex> l(g_sync_lock);

@@ -504,8 +504,8 @@ private:
 	class MetalVoidVertexPipeline* m_copyBufferToBufferPipeline;
 
 	// Synchronization resources
-	MTL::Event* m_event;
-	int32_t m_eventValue = -1;
+	MTL::SharedEvent* m_event = nullptr;
+	uint64_t m_eventValue = 0;
 
 	// Resources
 	MTL::SamplerState* m_nearestSampler;
@@ -534,7 +534,12 @@ private:
 
 	// Active objects
 	MetalCommandBuffer m_currentCommandBuffer{};
-	std::vector<MTL::CommandBuffer*> m_executingCommandBuffers;
+	struct ExecutingCommandBuffer
+	{
+	    MTL::CommandBuffer* buffer;
+	    uint64_t signalValue;
+	};
+	std::vector<ExecutingCommandBuffer> m_executingCommandBuffers;
 	MetalEncoderType m_encoderType = MetalEncoderType::None;
 	MTL::CommandEncoder* m_commandEncoder = nullptr;
 
