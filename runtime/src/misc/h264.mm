@@ -271,6 +271,7 @@ struct H264Decoder {
     std::deque<uint32_t> held_guest_bufs;
     std::vector<DecodedPicture> reorder_queue;
     uint64_t decode_seq = 0;
+    double last_emitted_pts = -1e18;
 
     ~H264Decoder() { destroy_session(); }
 
@@ -280,6 +281,7 @@ struct H264Decoder {
         }
         reorder_queue.clear();
         held_guest_bufs.clear();
+        last_emitted_pts = -1e18;
     }
 
     void reset_vt_objects() {
@@ -347,7 +349,9 @@ struct H264Decoder {
 
     size_t reorder_limit() const {
         if (output_per_frame != 0 || profile_idc == 66) return 0;
-        return std::clamp<size_t>(max_num_ref_frames + 1, 3, 6);
+        // BotW MP4 cutscenes (e.g. Demo101_0.mp4) have ctts composition offsets up to 18 frames
+        // while allocating 30 guest frame buffer slots; hold >=18 frames so B-pyramids never emit out of order.
+        return std::clamp<size_t>(std::max<size_t>(max_num_ref_frames * 3, 18), 18, 22);
     }
 };
 
@@ -414,6 +418,14 @@ std::vector<EmittedFrame> drain_ordered_frames(H264Decoder& dec, size_t keep_cou
         dec.held_guest_bufs.pop_front();
 
         write_nv12_to_guest(best->pb, guest_buf, dec.width, dec.height);
+        if (best->pts < dec.last_emitted_pts) {
+            static std::atomic<uint32_t> pts_reg_logs{0};
+            if (pts_reg_logs.fetch_add(1) < 10) {
+                LOG("h264: WARNING PTS regression %.3f -> %.3f (queue=%zu limit=%zu)",
+                    dec.last_emitted_pts, best->pts, dec.reorder_queue.size(), keep_count);
+            }
+        }
+        dec.last_emitted_pts = best->pts;
         ready.push_back({guest_buf, best->pts});
 
         CVPixelBufferRelease(best->pb);

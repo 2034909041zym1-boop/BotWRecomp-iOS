@@ -21,9 +21,17 @@ jobs:
           submodules: recursive
 
       - name: Install System Dependencies
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
         run: |
-          brew update
-          brew install cmake ninja uv boost glm ccache
+          missing=()
+          for pkg in cmake ninja uv boost glm ccache; do
+            brew list "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            brew install "${missing[@]}"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -51,7 +59,15 @@ jobs:
             echo "== generated/ C++ code already present =="
           fi
 
+      - name: Cache iOS Dependencies
+        id: cache-ios-deps
+        uses: actions/cache@v4
+        with:
+          path: ios-deps/prefix-iphoneos
+          key: ios-deps-iphoneos-${{ hashFiles('ios/scripts/build_deps.sh', 'ios/scripts/env.sh') }}
+
       - name: Build iOS Dependencies (SDL3, fmt, zstd)
+        if: steps.cache-ios-deps.outputs.cache-hit != 'true'
         run: |
           chmod +x ios/scripts/*.sh
           ./ios/scripts/build_deps.sh iphoneos
