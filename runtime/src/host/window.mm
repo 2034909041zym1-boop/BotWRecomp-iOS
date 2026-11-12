@@ -531,23 +531,28 @@ void run() {
                 dumped_ms = ms;
             }
         }
-        // Slow-frame sampler: fewer than 6 game frames in the last second (foreground) -> log the host stack of
-        // Cemu's GPU thread every 200 ms, at most 40 a minute (symbolize with atos against the binary).
+        // Slow-frame sampler: fewer than 6 game frames in the last second (foreground) -> log both LatteThread
+        // and running guest threads (main / Havok workers) so CPU spins show up in runtime.log.
         {
-            static uint64_t win_ms = 0, win_gf = 0, next_ms = 0, minute_ms = 0;
+            static uint64_t win_ms = 0, win_gf = 0, next_ms = 0, dump_next_ms = 0, minute_ms = 0;
             static bool slow = false;
-            static int taken = 0;
+            static int taken = 0, dump_taken = 0;
             uint64_t ms = SDL_GetTicks(), gf = g_game_frames;
             if (ms - win_ms >= 1000) {
                 bool now_slow = !botw_is_background() && win_gf && gf - win_gf < 6;
-                if (now_slow && !slow) LOG("slow: %llu game frames in the last second, sampling the GPU thread", (unsigned long long)(gf - win_gf));
+                if (now_slow && !slow) LOG("slow: %llu game frames in the last second, sampling GPU + guest threads", (unsigned long long)(gf - win_gf));
                 slow = now_slow, win_ms = ms, win_gf = gf;
             }
-            if (ms - minute_ms > 60000) minute_ms = ms, taken = 0;
+            if (ms - minute_ms > 60000) minute_ms = ms, taken = 0, dump_taken = 0;
             pthread_t gpu = g_gpu_thread;
-            if (slow && gpu && taken < 40 && ms >= next_ms) {
+            if (slow && gpu && taken < 6 && ms >= next_ms) {
                 threads::sample_host(gpu, "LatteThread");
-                taken++, next_ms = ms + 200;
+                taken++, next_ms = ms + 500;
+            }
+            if (slow && gf >= 900 && dump_taken < 6 && ms >= dump_next_ms) {
+                LOG("slow: dumping guest threads #%d (frame %llu):", dump_taken + 1, (unsigned long long)gf);
+                threads::dump(true);
+                dump_taken++, dump_next_ms = ms + 1500;
             }
         }
         // GamePad rumble at 60 Hz steps
