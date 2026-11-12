@@ -20,7 +20,7 @@ struct Settings {
     bool gyro = true;      // controller gyro -> GamePad motion
     bool rumble = true;
     int layout = 0;        // 0 Nintendo positions (A = right face button), 1 labels (A = bottom face button)
-    bool show_fps = false;
+    int show_fps = 0;      // 0 off, 1 FPS only, 2 FPS + thermal state
     int volume = 100;      // percent
     int touch = 0;         // on-screen controls: 0 auto (while no controller), 1 on, 2 off
     bool touch_hidden = false;  // collapsed to the show/hide button (that button toggles it)

@@ -1,5 +1,6 @@
 #include "settings.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -76,7 +77,7 @@ void load(const std::string& path) {
                 else if (!strcmp(line, "gyro")) g_s.gyro = atoi(v) != 0;
                 else if (!strcmp(line, "rumble")) g_s.rumble = atoi(v) != 0;
                 else if (!strcmp(line, "layout")) g_s.layout = atoi(v);
-                else if (!strcmp(line, "show_fps")) g_s.show_fps = atoi(v) != 0;
+                else if (!strcmp(line, "show_fps")) g_s.show_fps = std::clamp(atoi(v), 0, 2);
                 else if (!strcmp(line, "volume")) g_s.volume = atoi(v);
                 else if (!strcmp(line, "touch")) g_s.touch = atoi(v);
                 else if (!strcmp(line, "touch_hidden")) g_s.touch_hidden = atoi(v) != 0;

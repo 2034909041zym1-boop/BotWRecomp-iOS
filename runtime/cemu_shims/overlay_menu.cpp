@@ -23,8 +23,6 @@ std::string main_wait_report();
 namespace {
 std::atomic<float> g_fps{0};
 std::atomic<int> g_draws{0};
-std::atomic<float> g_gpu_ms_per_frame{0};
-std::atomic<float> g_gpu_us_per_draw{0};
 }  // namespace
 
 // Cemu's GPU thread (LatteThread), for the host loop's slow-frame sampler (window.mm).
@@ -45,8 +43,6 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
         gpu_ms_f = ((double)gpu_us / 1000.0) / (fps * dt_s);
         if (drawcalls > 0) us_per_draw = (gpu_ms_f * 1000.0) / (double)drawcalls;
     }
-    g_gpu_ms_per_frame.store((float)gpu_ms_f, std::memory_order_relaxed);
-    g_gpu_us_per_draw.store((float)us_per_draw, std::memory_order_relaxed);
     if (!g_boot_world_ready.load(std::memory_order_relaxed)) {
         static int s_world_ticks = 0;
         // Title/loading screens stay <= ~150 draws/frame; 3D overworld/shrines sustain >= 600.
@@ -84,7 +80,8 @@ void LatteOverlay_render(bool padView) {
     const ImGuiWindowFlags overlay = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                                      ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
-    if (settings::get().show_fps) {
+    const int show_mode = settings::get().show_fps;
+    if (show_mode > 0) {
         float sl, st, sr, sb;  // top-right, inside the safe area with some padding
         menu::safe_area(&sl, &st, &sr, &sb);
         ImVec2 pos{io.DisplaySize.x - sr - 16 * ui, st + 12 * ui}, pivot{1.0f, 0.0f};
@@ -102,11 +99,32 @@ void LatteOverlay_render(bool padView) {
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.86f, 0.71f, 0.34f, 0.35f));
         if (ImGui::Begin("##fps", nullptr, overlay | ImGuiWindowFlags_NoInputs)) {
             ImGui::SetWindowFontScale(font_scale * 0.90f);
-            const char* th = botw_thermal_state_name(botw_thermal_state());
-            const char* lp = botw_low_power_mode() ? " LP" : "";
             ImGui::Text("%.0f FPS  ·  %d Draws", (double)g_fps, (int)g_draws);
-            ImGui::Text("GPU %.1fms (%.1fus/d) · %s%s", (double)g_gpu_ms_per_frame.load(std::memory_order_relaxed),
-                        (double)g_gpu_us_per_draw.load(std::memory_order_relaxed), th, lp);
+            if (show_mode >= 2) {
+                const int st_val = botw_thermal_state();
+                const char* th_label = "温控:未知";
+                ImVec4 th_col(0.75f, 0.78f, 0.82f, 1.0f);
+                switch (st_val) {
+                case 0:
+                    th_label = "温控:正常";
+                    th_col = ImVec4(0.45f, 0.92f, 0.55f, 1.0f);
+                    break;
+                case 1:
+                    th_label = "温控:轻度";
+                    th_col = ImVec4(0.98f, 0.85f, 0.35f, 1.0f);
+                    break;
+                case 2:
+                    th_label = "温控:严重";
+                    th_col = ImVec4(1.00f, 0.52f, 0.22f, 1.0f);
+                    break;
+                case 3:
+                    th_label = "温控:过热";
+                    th_col = ImVec4(1.00f, 0.28f, 0.28f, 1.0f);
+                    break;
+                }
+                ImGui::SameLine(0, 8.0f * ui);
+                ImGui::TextColored(th_col, "%s%s", th_label, botw_low_power_mode() ? " [省电]" : "");
+            }
         }
         ImGui::End();
         ImGui::PopStyleColor(1);
