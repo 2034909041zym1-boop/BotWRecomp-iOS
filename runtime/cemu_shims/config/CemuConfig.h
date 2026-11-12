@@ -20,7 +20,7 @@ enum UpscalingFilter { kLinearFilter = 0, kBicubicFilter, kBicubicHermiteFilter,
 enum class GraphicAPI { kOpenGL = 0, kVulkan, kMetal };
 
 struct CemuConfig {
-    bool async_compile = true;
+    bool async_compile = false;
     bool vk_accurate_barriers = false;
     bool play_boot_sound = false;
     float userDisplayGamma = 2.2f;
