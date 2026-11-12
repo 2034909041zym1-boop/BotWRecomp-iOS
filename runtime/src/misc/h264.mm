@@ -6,6 +6,7 @@
 #include <VideoToolbox/VideoToolbox.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <deque>
@@ -443,7 +444,18 @@ void invoke_output_callback(PPCContext* c, uint32_t mem_addr, uint32_t fptr_outp
         mem::w32(ptrs_addr + i * 4, res_addr);
     }
 
-    guest_call(c, fptr_output, {out_addr});
+    uint32_t cb_ret = guest_call(c, fptr_output, {out_addr});
+    static std::atomic<uint32_t> cb_ok_logs{0};
+    static std::atomic<uint32_t> cb_err_logs{0};
+    if (cb_ret != 0) {
+        if (cb_err_logs.fetch_add(1) < 10) {
+            LOG("h264: FPTR_OUTPUT(%08x) returned %d (count=%u buf=%08x pts=%.3f umem=%08x)",
+                fptr_output, (int32_t)cb_ret, count, frames[0].guest_buf, frames[0].pts, user_memory);
+        }
+    } else if (cb_ok_logs.fetch_add(1) < 3) {
+        LOG("h264: FPTR_OUTPUT(%08x) OK count=%u buf=%08x pts=%.3f umem=%08x",
+            fptr_output, count, frames[0].guest_buf, frames[0].pts, user_memory);
+    }
 }
 
 }  // namespace
@@ -507,7 +519,14 @@ HLE_EXPORT(h264, H264DECSetParam_OUTPUT_PER_FRAME) {
 }
 
 HLE_EXPORT(h264, H264DECSetParam_USER_MEMORY) {
-    if (auto dec = get_decoder(ARG(0))) dec->user_memory = ARG(1);
+    if (auto dec = get_decoder(ARG(0))) {
+        // Wii U H264DECSetParam_USER_MEMORY takes void** (a pointer whose 32-bit word is the guest userMemory ptr).
+        const uint32_t param = ARG(1);
+        const uint32_t umem = param ? mem::r32(param) : 0;
+        dec->user_memory = umem;
+        LOG("h264: H264DECSetParam_USER_MEMORY(%08x) -> user_memory=%08x (*=%08x)",
+            param, umem, umem ? mem::r32(umem) : 0);
+    }
     RET(0);
 }
 
@@ -632,6 +651,13 @@ HLE_EXPORT(h264, H264DECExecute) {
             if (dec->ensure_session()) {
                 info_flags = 0;
                 st = VTDecompressionSessionDecodeFrame(dec->session, sample_buf, 0, &req, &info_flags);
+            }
+        }
+        if (st != noErr) {
+            static std::atomic<uint32_t> vt_err_logs{0};
+            if (vt_err_logs.fetch_add(1) < 10) {
+                LOG("h264: VTDecompressionSessionDecodeFrame failed: %d (flags=%u, pics=%zu)",
+                    (int)st, (unsigned)info_flags, batch.pics.size());
             }
         }
     }
