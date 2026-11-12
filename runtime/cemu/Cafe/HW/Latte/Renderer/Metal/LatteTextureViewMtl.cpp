@@ -62,6 +62,8 @@ LatteTextureViewMtl::LatteTextureViewMtl(MetalRenderer* mtlRenderer, LatteTextur
 
 LatteTextureViewMtl::~LatteTextureViewMtl()
 {
+    if (m_mtlr)
+        m_mtlr->NotifyTextureViewDeletion(this);
     m_rgbaView->release();
 	for (sint32 i = 0; i < std::size(m_viewCache); i++)
     {

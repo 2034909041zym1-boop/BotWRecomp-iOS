@@ -21,7 +21,7 @@ enum class GraphicAPI { kOpenGL = 0, kVulkan, kMetal };
 
 struct CemuConfig {
     bool async_compile = true;
-    bool vk_accurate_barriers = false;
+    bool vk_accurate_barriers = true;
     bool play_boot_sound = false;
     float userDisplayGamma = 2.2f;
     int upscale_filter = kBicubicFilter;

@@ -750,6 +750,8 @@ void MetalRenderer::rendertarget_deleteCachedFBO(LatteCachedFBO* cfbo)
 {
 	if (cfbo == (LatteCachedFBO*)m_state.m_activeFBO.m_fbo)
 	    m_state.m_activeFBO = {nullptr};
+	if (cfbo == (LatteCachedFBO*)m_state.m_lastUsedFBO.m_fbo)
+	    m_state.m_lastUsedFBO = {nullptr};
 }
 
 void MetalRenderer::rendertarget_bindFramebufferObject(LatteCachedFBO* cfbo)
@@ -912,7 +914,17 @@ LatteTexture* MetalRenderer::texture_createTextureEx(Latte::E_DIM dim, MPTR phys
 
 void MetalRenderer::texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit)
 {
-    m_state.m_textures[textureUnit] = static_cast<LatteTextureViewMtl*>(textureView);
+    if (textureUnit < std::size(m_state.m_textures))
+        m_state.m_textures[textureUnit] = static_cast<LatteTextureViewMtl*>(textureView);
+}
+
+void MetalRenderer::NotifyTextureViewDeletion(LatteTextureViewMtl* textureView)
+{
+    for (auto& slot : m_state.m_textures)
+    {
+        if (slot == textureView)
+            slot = nullptr;
+    }
 }
 
 void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth_)
@@ -1177,7 +1189,6 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
     const auto fetchShader = LatteSHRC_GetActiveFetchShader();
 
-    /*
     bool neverSkipAccurateBarrier = false;
 
     // "Accurate barriers" is usually enabled globally but since the CPU cost is substantial we allow users to disable it (debug -> 'Accurate barriers' option)
@@ -1190,11 +1201,12 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 			neverSkipAccurateBarrier = true;
 	}
 
-	// Check if we need to end the render pass
-	if (!m_state.m_isFirstDrawInRenderPass && (GetConfig().vk_accurate_barriers || neverSkipAccurateBarrier))
+	// Check if we need to end the render pass so Apple TBDR tile writes flush to DRAM before sampling (e.g. water sampling scene depth)
+	if (m_commandEncoder && m_encoderType == MetalEncoderType::Render && !m_state.m_isFirstDrawInRenderPass && (GetConfig().vk_accurate_barriers || neverSkipAccurateBarrier))
 	{
-    	// Fragment shader is most likely to require a render pass flush, so check for it first
-    	bool endRenderPass = CheckIfRenderPassNeedsFlush(pixelShader);
+    	bool endRenderPass = LatteGPUState.requiresTextureBarrier;
+    	if (!endRenderPass)
+    	    endRenderPass = CheckIfRenderPassNeedsFlush(pixelShader);
     	if (!endRenderPass)
     	    endRenderPass = CheckIfRenderPassNeedsFlush(vertexShader);
     	if (!endRenderPass && geometryShader)
@@ -1203,11 +1215,9 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     	if (endRenderPass)
         {
     	    EndEncoding();
-            // TODO: only log in debug?
             cemuLog_logOnce(LogType::Force, "Ending render pass due to render target self-dependency\n");
         }
 	}
-	*/
 
     // Primitive type
     const LattePrimitiveMode primitiveMode = LatteGPUState.contextNew.VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE();
@@ -1626,6 +1636,7 @@ void MetalRenderer::draw_handleSpecialState5()
 	encoderState.m_buffers[METAL_SHADER_TYPE_FRAGMENT][GET_HELPER_BUFFER_BINDING(0)] = {nullptr};
 
 	renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle,  NS::UInteger(0),  NS::UInteger(3));
+	m_state.m_isFirstDrawInRenderPass = false;
 }
 
 Renderer::IndexAllocation MetalRenderer::indexData_reserveIndexMemory(uint32 size)
@@ -2038,65 +2049,72 @@ bool MetalRenderer::AcquireDrawable(bool mainWindow)
     return layer.AcquireDrawable();
 }
 
-/*
+static bool FboUsesBaseTexture(CachedFBOMtl* fbo, LatteTexture* baseTexture)
+{
+    if (!fbo || !baseTexture)
+        return false;
+    for (uint8 j = 0; j < LATTE_NUM_COLOR_TARGET; j++)
+    {
+        auto colorTarget = fbo->colorBuffer[j].texture;
+        if (colorTarget && colorTarget->baseTexture == baseTexture)
+            return true;
+    }
+    auto depthTarget = fbo->depthBuffer.texture;
+    if (depthTarget && depthTarget->baseTexture == baseTexture)
+        return true;
+    return false;
+}
+
 bool MetalRenderer::CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader)
 {
-    if (!shader || !m_state.m_activeFBO.m_fbo)
+    if (!shader || (!m_state.m_activeFBO.m_fbo && !m_state.m_lastUsedFBO.m_fbo))
         return false;
 
     sint32 textureCount = shader->resourceMapping.getTextureCount();
 	for (int i = 0; i < textureCount; ++i)
 	{
 		const auto relative_textureUnit = shader->resourceMapping.getRelativeTextureUnitFromRelativeBindingPoint(i);
-		auto hostTextureUnit = relative_textureUnit;
-		auto textureDim = shader->textureUnitDim[relative_textureUnit];
-
-		// Texture is accessed as a framebuffer fetch, therefore there is no need to flush it
-		if (shader->textureRenderTargetIndex[relative_textureUnit] != 255)
+		if (relative_textureUnit < 0 || relative_textureUnit >= LATTE_NUM_MAX_TEX_UNITS)
 		    continue;
 
-		auto texUnitRegIndex = hostTextureUnit * 7;
+		// Texture is accessed as a framebuffer fetch, therefore there is no need to flush it
+		if (m_supportsFramebufferFetch && shader->textureRenderTargetIndex[relative_textureUnit] != 255)
+		    continue;
+
+		uint32 hostTextureUnit = (uint32)relative_textureUnit;
 		switch (shader->shaderType)
 		{
 		case LatteConst::ShaderType::Vertex:
 			hostTextureUnit += LATTE_CEMU_VS_TEX_UNIT_BASE;
-			texUnitRegIndex += Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_VS;
 			break;
 		case LatteConst::ShaderType::Pixel:
 			hostTextureUnit += LATTE_CEMU_PS_TEX_UNIT_BASE;
-			texUnitRegIndex += Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_PS;
 			break;
 		case LatteConst::ShaderType::Geometry:
 			hostTextureUnit += LATTE_CEMU_GS_TEX_UNIT_BASE;
-			texUnitRegIndex += Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_GS;
 			break;
 		default:
-			UNREACHABLE;
+			continue;
 		}
+
+		if (hostTextureUnit >= std::size(m_state.m_textures))
+		    continue;
 
 		auto textureView = m_state.m_textures[hostTextureUnit];
 		if (!textureView)
             continue;
 
 		LatteTexture* baseTexture = textureView->baseTexture;
-
-	    // If the texture is also used in the current render pass as color target, flush
-		for (uint8 j = 0; j < LATTE_NUM_COLOR_TARGET; j++)
+		// Check both activeFBO and the currently encoding lastUsedFBO (e.g. when depth was omitted in activeFBO to sample scene depth)
+		if (FboUsesBaseTexture(m_state.m_activeFBO.m_fbo, baseTexture) ||
+		    FboUsesBaseTexture(m_state.m_lastUsedFBO.m_fbo, baseTexture))
 		{
-		    auto colorTarget = m_state.m_activeFBO.m_fbo->colorBuffer[j].texture;
-			if (colorTarget && colorTarget->baseTexture == baseTexture)
-			    return true;
+		    return true;
 		}
-
-        // If the texture is also used in the current render pass as depth target (e.g. water sampling scene depth), flush
-        auto depthTarget = m_state.m_activeFBO.m_fbo->depthBuffer.texture;
-        if (depthTarget && depthTarget->baseTexture == baseTexture)
-            return true;
 	}
 
 	return false;
 }
-*/
 
 void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader)
 {
