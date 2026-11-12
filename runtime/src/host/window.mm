@@ -103,7 +103,7 @@ static void install_lifecycle_observers() {
         obs.push_back({UISceneWillDeactivateNotification, true, "UISceneWillDeactivate"});
         obs.push_back({UISceneDidEnterBackgroundNotification, true, "UISceneDidEnterBackground"});
         obs.push_back({UISceneWillEnterForegroundNotification, false, "UISceneWillEnterForeground"});
-        obs.push_back({UISceneDidBecomeActiveNotification, false, "UISceneDidBecomeActive"});
+        obs.push_back({UISceneDidActivateNotification, false, "UISceneDidActivate"});
     }
     static NSMutableArray* tokens = [NSMutableArray new];
     NSNotificationCenter* nc = NSNotificationCenter.defaultCenter;

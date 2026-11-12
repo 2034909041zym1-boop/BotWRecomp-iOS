@@ -23,12 +23,18 @@ jobs:
       - name: Install System Dependencies
         run: |
           brew update
-          brew install cmake ninja uv boost glm
+          brew install cmake ninja uv boost glm ccache
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Cache generated C++ code
+        uses: actions/cache@v4
+        with:
+          path: generated
+          key: generated-${{ runner.os }}-${{ hashFiles('U-King.rpx', 'cafe/*.py', 'tools/recompile.py') }}
 
       - name: Generate C++ Code (if not present)
         run: |
@@ -50,6 +56,14 @@ jobs:
           chmod +x ios/scripts/*.sh
           ./ios/scripts/build_deps.sh iphoneos
 
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-ios-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ccache-ios-${{ runner.os }}-
+
       - name: Configure CMake for iOS
         env:
           BUNDLE_ID: ${{ github.event.inputs.bundle_id || 'com.botw.recomp' }}
@@ -60,12 +74,30 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache \
             -DBOTW_BUNDLE_ID="$BUNDLE_ID" \
             -DBOTW_IOS_DEPS="$PWD/ios-deps"
 
+      - name: Pre-compile runtime, host & Cemu GPU (fast check)
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_MAXSIZE: 2G
+        run: |
+          cmake --build build-ios/iphoneos --target cemu_gpu -j 4
+          RUNTIME_OBJS=$(ninja -C build-ios/iphoneos -t targets all | grep -E '^CMakeFiles/BotWRecomp\.dir/.*\.(cpp|mm)\.o:' | cut -d: -f1)
+          if [ -n "$RUNTIME_OBJS" ]; then
+            echo "$RUNTIME_OBJS" | xargs ninja -C build-ios/iphoneos -j 4
+          fi
+
       - name: Build BotWRecomp
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_MAXSIZE: 2G
         run: |
           cmake --build build-ios/iphoneos -j 4
+          ccache -s || true
 
       - name: Ad-Hoc Sign & Package IPA
         run: |
