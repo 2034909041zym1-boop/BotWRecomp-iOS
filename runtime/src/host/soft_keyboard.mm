@@ -12,6 +12,10 @@
 
 #include <string.h>
 
+#include "../log.h"
+
+extern void* botw_ui_root_view();
+
 namespace {
 
 constexpr int kMaxText = 127;
@@ -23,20 +27,6 @@ int g_result = 0;  // 0 none, 1 accepted, 2 cancelled
 
 UIView* g_panel = nil;
 UILabel* g_field = nil;
-
-UIViewController* root_view_controller() {
-    UIWindow* key = nil;
-    for (UIWindow* w in UIApplication.sharedApplication.windows) {
-        if (w.isKeyWindow) {
-            key = w;
-            break;
-        }
-    }
-    if (!key) key = UIApplication.sharedApplication.windows.firstObject;
-    UIViewController* vc = key.rootViewController;
-    while (vc.presentedViewController) vc = vc.presentedViewController;
-    return vc;
-}
 
 void refresh_label() {
     if (g_field) g_field.text = [NSString stringWithUTF8String:g_text];
@@ -76,13 +66,16 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
     g_text[sizeof(g_text) - 1] = 0;
     g_result = 0;
 
-    UIViewController* vc = root_view_controller();
-    if (!vc) return;
-    UIView* host = vc.view;
+    UIView* host = (__bridge UIView*)botw_ui_root_view();
+    LOG("[swkbd-ui] show init='%s' max=%u host=%p", g_text, g_maxLen, (void*)host);
+    if (!host) return;
     const CGRect bounds = host.bounds;
     const CGFloat w = bounds.size.width;
     const CGFloat h = bounds.size.height;
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0) {
+        LOG("[swkbd-ui] empty bounds %.0fx%.0f", w, h);
+        return;
+    }
 
     UIView* panel = [[UIView alloc] initWithFrame:CGRectMake(0, h * 0.30, w, h * 0.70)];
     panel.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.88];
@@ -147,6 +140,7 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
     [host addSubview:panel];
     g_panel = panel;
     g_shown = 1;
+    LOG("[swkbd-ui] panel added %.0fx%.0f", w, h);
 }
 
 extern "C" void swkbd_ui_hide(void) { close_panel(); }

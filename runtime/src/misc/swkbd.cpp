@@ -175,6 +175,8 @@ HLE_EXPORT(swkbd, SwkbdAppearInputForm__3RplFRCQ3_2nn5swkbd9AppearArg) {
     if (maxLen == 0 || maxLen > kMaxChars - 1) maxLen = kMaxChars - 1;
     g_maxLen = maxLen;
 
+    LOG("[swkbd] appearInputForm arg=%08x max=%u initial=%08x", arg, maxLen,
+        arg ? mem::r32(arg + 0xC8) : 0);
     set_text_from_guest(arg ? mem::r32(arg + 0xC8) : 0);
 
     char initial[512];
