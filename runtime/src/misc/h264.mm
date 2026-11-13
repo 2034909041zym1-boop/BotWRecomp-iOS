@@ -10,7 +10,6 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -240,6 +239,7 @@ struct VtDecodeBatch {
 struct VtCallbackReq {
     VtDecodeBatch* batch = nullptr;
     double pts = 0.0;
+    uint32_t guest_buf = 0;
 };
 
 void on_vt_decompressed(void*, void* sourceFrameRefCon, OSStatus status, VTDecodeInfoFlags,
@@ -248,7 +248,7 @@ void on_vt_decompressed(void*, void* sourceFrameRefCon, OSStatus status, VTDecod
     if (!req || !req->batch) return;
     if (status == noErr && imageBuffer && CFGetTypeID(imageBuffer) == CVPixelBufferGetTypeID()) {
         CVPixelBufferRetain(imageBuffer);
-        req->batch->pics.push_back({imageBuffer, req->pts, (*req->batch->next_seq)++});
+        req->batch->pics.push_back({imageBuffer, req->pts, (*req->batch->next_seq)++, req->guest_buf});
     } else if (status != noErr) {
         LOG("h264: VideoToolbox decode callback error %d", (int)status);
     }
@@ -274,7 +274,6 @@ struct H264Decoder {
     CMFormatDescriptionRef fmt = nullptr;
     VTDecompressionSessionRef session = nullptr;
 
-    std::deque<uint32_t> held_guest_bufs;
     std::vector<DecodedPicture> reorder_queue;
     uint64_t decode_seq = 0;
     double last_emitted_pts = -1e18;
@@ -291,7 +290,6 @@ struct H264Decoder {
             if (d.pb) CVPixelBufferRelease(d.pb);
         }
         reorder_queue.clear();
-        held_guest_bufs.clear();
         last_emitted_pts = -1e18;
     }
 
@@ -418,18 +416,17 @@ struct EmittedFrame {
     double pts = 0.0;
 };
 
-// Drains reorder_queue down to `keep_count` oldest-PTS frames into `held_guest_bufs`,
-// writing NV12 pixels into guest memory and returning the metadata needed for FPTR_OUTPUT.
+// Drains reorder_queue down to `keep_count` oldest-PTS frames, writing NV12 pixels into the
+// guest frame buffer bound to each frame and returning the metadata needed for FPTR_OUTPUT.
 std::vector<EmittedFrame> drain_ordered_frames(H264Decoder& dec, size_t keep_count) {
     std::vector<EmittedFrame> ready;
-    while (dec.reorder_queue.size() > keep_count && !dec.held_guest_bufs.empty() && ready.size() < kMaxBatchOutputs) {
+    while (dec.reorder_queue.size() > keep_count && ready.size() < kMaxBatchOutputs) {
         auto best = std::min_element(dec.reorder_queue.begin(), dec.reorder_queue.end(),
                                      [](const DecodedPicture& a, const DecodedPicture& b) {
                                          if (a.pts != b.pts) return a.pts < b.pts;
                                          return a.seq < b.seq;
                                      });
         uint32_t guest_buf = best->guest_buf;
-        dec.held_guest_bufs.pop_front();
 
         write_nv12_to_guest(best->pb, guest_buf, dec.width, dec.height);
         if (best->pts < dec.last_emitted_pts) {
@@ -689,7 +686,7 @@ HLE_EXPORT(h264, H264DECExecute) {
     if (botw_is_background()) botw_wait_while_background();
 
     VtDecodeBatch batch{ {}, &dec->decode_seq };
-    VtCallbackReq req{ &batch, dec->bitstream_pts };
+    VtCallbackReq req{ &batch, dec->bitstream_pts, frame_buf };
     VTDecodeInfoFlags info_flags = 0;
     @autoreleasepool {
         st = VTDecompressionSessionDecodeFrame(dec->session, sample_buf, 0, &req, &info_flags);
@@ -720,11 +717,11 @@ HLE_EXPORT(h264, H264DECExecute) {
     }
     CFRelease(sample_buf);
 
-    if (st != noErr || batch.pics.empty()) {
+    if (st != noErr) {
         dec->dropped_total++;
-        static std::atomic<uint32_t> empty_batch_logs{0};
-        if (empty_batch_logs.fetch_add(1) < 20) {
-            LOG("h264: H264DECExecute dropped frame: st=%d pics=%zu (async callback missing)", (int)st, batch.pics.size());
+        static std::atomic<uint32_t> vt_err_logs2{0};
+        if (vt_err_logs2.fetch_add(1) < 20) {
+            LOG("h264: H264DECExecute decode failed: st=%d pics=%zu", (int)st, batch.pics.size());
         }
         for (auto& d : batch.pics) {
             if (d.pb) CVPixelBufferRelease(d.pb);
@@ -733,15 +730,12 @@ HLE_EXPORT(h264, H264DECExecute) {
         return;
     }
 
-    // Maintain a strict 1:1 pairing between held guest frame buffers and queued decoded pictures.
-    dec->held_guest_bufs.push_back(frame_buf);
-    for (size_t i = 0; i < batch.pics.size(); i++) {
-        if (i > 0 && dec->held_guest_bufs.size() < dec->reorder_queue.size() + batch.pics.size() - i) {
-            CVPixelBufferRelease(batch.pics[i].pb);
-            continue;
-        }
-        batch.pics[i].guest_buf = frame_buf;
-        dec->reorder_queue.push_back(batch.pics[i]);
+    // Every decoded frame carries its own guest frame buffer via req->guest_buf (bound through
+    // VideoToolbox's sourceFrameRefCon). This keeps frame<->buffer pairing correct even when
+    // VideoToolbox emits zero or several frames per H264DECExecute call (B-frame reorder),
+    // instead of assuming a strict one-frame-per-call FIFO.
+    for (auto& pic : batch.pics) {
+        dec->reorder_queue.push_back(pic);
     }
 
     const uint32_t fptr = dec->fptr_output;
@@ -753,9 +747,9 @@ HLE_EXPORT(h264, H264DECExecute) {
 
     dec->execute_calls++;
     if (dec->execute_calls % 90 == 0) {
-        LOG("h264: heartbeat %08x exec=%llu emitted=%llu dropped=%llu queue=%zu held=%zu limit=%zu opf=%u last_pts=%.3f",
+        LOG("h264: heartbeat %08x exec=%llu emitted=%llu dropped=%llu queue=%zu limit=%zu opf=%u last_pts=%.3f",
             mem_addr, (unsigned long long)dec->execute_calls, (unsigned long long)dec->emitted_total,
-            (unsigned long long)dec->dropped_total, dec->reorder_queue.size(), dec->held_guest_bufs.size(),
+            (unsigned long long)dec->dropped_total, dec->reorder_queue.size(),
             dec->reorder_limit(), dec->output_per_frame, dec->last_emitted_pts);
     }
 
@@ -771,14 +765,14 @@ HLE_EXPORT(h264, H264DECEnd) {
         return;
     }
     if (dec->session) VTDecompressionSessionWaitForAsynchronousFrames(dec->session);
-    LOG("h264: H264DECEnd %08x exec=%llu emitted=%llu dropped=%llu queue=%zu held=%zu last_pts=%.3f",
+    LOG("h264: H264DECEnd %08x exec=%llu emitted=%llu dropped=%llu queue=%zu last_pts=%.3f",
         mem_addr, (unsigned long long)dec->execute_calls, (unsigned long long)dec->emitted_total,
-        (unsigned long long)dec->dropped_total, dec->reorder_queue.size(), dec->held_guest_bufs.size(),
+        (unsigned long long)dec->dropped_total, dec->reorder_queue.size(),
         dec->last_emitted_pts);
     const uint32_t fptr = dec->fptr_output;
     const uint32_t user_mem = dec->user_memory;
     const uint32_t pitch = (dec->width + 255u) & ~255u;
-    while (!dec->reorder_queue.empty() && !dec->held_guest_bufs.empty()) {
+    while (!dec->reorder_queue.empty()) {
         std::vector<EmittedFrame> ready = drain_ordered_frames(*dec, 0);
         if (ready.empty()) break;
         invoke_output_callback(c, mem_addr, fptr, user_mem, ready, dec->width, dec->height, pitch);
