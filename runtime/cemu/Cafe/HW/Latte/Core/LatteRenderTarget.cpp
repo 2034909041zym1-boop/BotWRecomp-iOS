@@ -861,6 +861,7 @@ void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, s
 	}
 	else
 	{
+		// kStretch, and kHorPlus where the render targets already match the display aspect: 1:1 fill
 		scaledOutputX = w;
 		scaledOutputY = h;
 	}

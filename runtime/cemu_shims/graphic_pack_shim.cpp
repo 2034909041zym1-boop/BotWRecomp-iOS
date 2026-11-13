@@ -4,7 +4,10 @@
 #include "Cafe/HW/Latte/ISA/LatteReg.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 
-extern float g_render_scale;  // runtime: --scale
+#include <cmath>
+
+extern float g_render_scale;    // runtime: --scale
+extern float g_aspect_extra;    // runtime: hor+ horizontal widening (1.0 = off)
 
 namespace {
 struct Row {
@@ -39,7 +42,11 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             f.tilemode_whitelist = r.tilemodes;
             f.tilemode_blacklist = r.tilemodes_excluded;
             auto& o = rule.overwrite_settings;
-            o.width = (int)(g_render_scale * r.ow + r.ow_add);  // the pack's expressions truncate
+            // hor+: widen only the screen-space render targets, so their aspect follows the display.
+            // Square targets (shadow maps, LUTs) keep their size.
+            const bool screenTarget = r.oh > 0 && std::fabs((double)r.ow / (double)r.oh - 16.0 / 9.0) < 0.02;
+            const double widthScale = g_render_scale * (screenTarget ? g_aspect_extra : 1.0f);
+            o.width = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
             o.height = (int)(g_render_scale * r.oh + r.oh_add);
             o.format = r.overwrite_format;
             gp->m_rules.push_back(rule);

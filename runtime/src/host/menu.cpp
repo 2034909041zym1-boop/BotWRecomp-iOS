@@ -18,7 +18,7 @@ int g_cursor = 0;
 
 enum RowId { kFps, kScale, kAA, kFilter, kDisplay, kShowFps, kGyro, kRumble, kLayout, kTouch, kVolume, kClose, kRows };
 const float kScales[] = {0, 0.5f, 0.75f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the display
-const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (裁剪)"};
+const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (裁剪)", "宽屏 hor+ (重启后生效)"};
 const char* kFilters[] = {"双线性 (Bilinear)", "双三次 (Bicubic)", "埃尔米特 (Hermite)", "邻近采样 (Nearest)"};
 const char* kAAModes[] = {"关闭 (原生)", "FXAA 抗锯齿", "FXAA + CAS 锐化"};
 const char* kShowFpsModes[] = {"关闭", "一档: 仅帧率", "二档: 帧率 + 温控"};
@@ -42,7 +42,7 @@ void step(Settings& s, int row, int dir) {
             break;
         }
         case kAA: s.aa = wrap(s.aa + dir, 3); break;
-        case kDisplay: s.display = wrap(s.display + dir, 3); break;
+        case kDisplay: s.display = wrap(s.display + dir, 4); break;
         case kFilter: s.filter = wrap(s.filter + dir, 4); break;
         case kGyro: s.gyro = !s.gyro; break;
         case kRumble: s.rumble = !s.rumble; break;
@@ -146,7 +146,7 @@ View view() {
     v.rows[kScale] = {"渲染分辨率", scale_text(s.scale)};
     v.rows[kAA] = {"抗锯齿", kAAModes[std::clamp(s.aa, 0, 2)]};
     v.rows[kFilter] = {"缩放滤镜", s.aa > 0 ? "由抗锯齿接管" : kFilters[std::clamp(s.filter, 0, 3)]};
-    v.rows[kDisplay] = {"画面比例", kDisplays[std::clamp(s.display, 0, 2)]};
+    v.rows[kDisplay] = {"画面比例", kDisplays[std::clamp(s.display, 0, 3)]};
     v.rows[kShowFps] = {"性能角标", kShowFpsModes[std::clamp(s.show_fps, 0, 2)]};
     v.rows[kGyro] = {"体感瞄准", s.gyro ? "开启" : "关闭", false, "操控与音频"};
     v.rows[kRumble] = {"手柄震动", s.rumble ? "开启" : "关闭"};
@@ -155,7 +155,7 @@ View view() {
     snprintf(b, sizeof b, "%d%%", s.volume);
     v.rows[kVolume] = {"游戏音量", b};
     v.rows[kClose] = {"关闭设置菜单", "", true};
-    snprintf(b, sizeof b, "当前以 %gx 渲染  ·  分辨率改动将在重启后生效，其余选项实时生效", g_render_scale);
+    snprintf(b, sizeof b, "当前以 %gx 渲染  ·  分辨率与宽屏 hor+ 改动将在重启后生效，其余选项实时生效", g_render_scale);
     v.note = b;
     return v;
 }

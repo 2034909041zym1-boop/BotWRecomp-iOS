@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <string>
+#include <utility>
 
 #include "hle.h"
 #include "loader.h"
@@ -26,6 +27,8 @@ bool g_headless = false;
 bool g_mute = false;       // no audio output (on-screen test runs)
 int g_run_seconds = 0;     // --seconds N: exit after N seconds (tests)
 float g_render_scale = 0;  // --scale N: render targets N times the native 1280x720 (graphic_pack_shim.cpp); 0 = fit the display
+float g_aspect_extra = 1.0f;  // hor+ mode: horizontal widening of the render targets (display aspect / 16:9)
+void wide_apply(float aspect);  // game/wide.cpp: patch the guest's TV aspect ratio
 int g_target_fps = 60;       // --fps 30: the game's own pacing (game/fps.cpp)
 uint64_t g_trace_from = 0, g_trace_to = 0;  // --trace-frames A-B: HLE call trace for frames [A, B)
 
@@ -72,9 +75,9 @@ int main(int argc, char** argv) {
         else if (a == "--seconds" && i + 1 < argc) g_run_seconds = atoi(argv[++i]);
         else if (a == "--fps" && i + 1 < argc) opt.fps = atoi(argv[++i]) >= 60 ? 60 : 30;
         else if (a == "--scale" && i + 1 < argc) opt.scale = (float)atof(argv[++i]);
-        else if (a == "--display" && i + 1 < argc) {  // fit (letterbox) | stretch | fill (crop to cover)
+        else if (a == "--display" && i + 1 < argc) {  // fit (letterbox) | stretch | fill (crop to cover) | wide (hor+)
             std::string m = argv[++i];
-            opt.display = m == "stretch" ? 1 : m == "fill" ? 2 : 0;
+            opt.display = m == "stretch" ? 1 : m == "fill" ? 2 : m == "wide" ? 3 : 0;
         }
     }
     settings::set(opt, false);  // this run only; the menu saves its changes
@@ -108,6 +111,21 @@ int main(int argc, char** argv) {
         g_render_scale = std::clamp(std::min(dw / 1280.0f, dh / 720.0f), 1.0f, 3.0f);
         LOG("render scale %.3f (%dx%d for a %dx%d display)", g_render_scale, (int)(1280 * g_render_scale),
             (int)(720 * g_render_scale), dw, dh);
+    }
+    if (opt.display == 3) {  // hor+: render the display's aspect ratio and widen the camera, then present 1:1
+        int dw, dh;
+        window::display_pixel_size(&dw, &dh);
+        if (dw < dh) std::swap(dw, dh);  // the app is landscape-only; SDL may still report the portrait mode
+        const float aspect = (float)dw / (float)std::max(dh, 1);
+        if (aspect > 16.0f / 9.0f + 0.01f) {
+            if (opt.scale <= 0)  // height-native, so the widened width lands on the display width exactly
+                g_render_scale = std::clamp(dh / 720.0f, 1.0f, 3.0f);
+            g_aspect_extra = aspect / (16.0f / 9.0f);
+            wide_apply(aspect);
+            LOG("[wide] display %dx%d aspect %.4f, render targets widened %.4fx (%.0fx%.0f)",
+                dw, dh, aspect, g_aspect_extra, 1280.0f * g_render_scale * g_aspect_extra, 720.0f * g_render_scale);
+        }
+        latte::set_display_mode(3);  // re-apply now that g_aspect_extra is known
     }
     debug_watch_init();
     if (capture_every) latte::set_capture(capture_every, (g_user_root + "/captures").c_str());

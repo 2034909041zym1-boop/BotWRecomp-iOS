@@ -9,11 +9,11 @@ struct Settings {
 #if TARGET_OS_IOS
     int fps = 30;          // 30 or 60 (native 30 fps keeps A18 Pro cool and steady)
     float scale = 1;       // render scale (phones: native 720p); 0 = fit the display; applies at the next launch
-    int display = 1;       // 0 fit (letterbox), 1 stretch, 2 fill (crop)
+    int display = 1;       // 0 fit (letterbox), 1 stretch, 2 fill (crop), 3 wide (hor+, next launch)
 #else
     int fps = 60;          // 30 or 60
     float scale = 0;       // render scale; 0 = fit the display (takes effect at the next launch)
-    int display = 0;       // 0 fit (letterbox), 1 stretch, 2 fill (crop)
+    int display = 0;       // 0 fit (letterbox), 1 stretch, 2 fill (crop), 3 wide (hor+, next launch)
 #endif
     int filter = 1;        // output scaling: 0 bilinear, 1 bicubic, 2 hermite, 3 nearest
     int aa = 2;            // post-process AA: 0 off, 1 FXAA, 2 FXAA + CAS sharpen

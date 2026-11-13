@@ -188,7 +188,12 @@ void resize_window(int w, int h) {
     if (g_renderer) ((MetalRenderer*)g_renderer.get())->ResizeLayer({w, h}, true);
 }
 
-void set_display_mode(int mode) { GetConfig().fullscreen_scaling = mode; }
+// hor+ needs render targets built at the display aspect, which happens at launch: switching to it
+// mid-session would only stretch the 16:9 image, so fall back to letterbox until the next launch.
+void set_display_mode(int mode) {
+    extern float g_aspect_extra;
+    GetConfig().fullscreen_scaling = (mode == kHorPlus && g_aspect_extra <= 1.0f) ? kKeepAspectRatio : mode;
+}
 void set_output_filter(int f) {  // upscaling uses the choice; downscaling stays bilinear unless nearest
     GetConfig().upscale_filter = f;
     GetConfig().downscale_filter = f == kNearestNeighborFilter ? kNearestNeighborFilter : kLinearFilter;
