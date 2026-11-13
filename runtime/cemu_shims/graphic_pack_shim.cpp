@@ -28,9 +28,7 @@ const Row kRows[] = {
 const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphicPacks() {
     static std::vector<std::shared_ptr<GraphicPack2>> packs = [] {
         std::vector<std::shared_ptr<GraphicPack2>> v;
-        // hor+ has to resize the screen targets even at scale 1.0, otherwise the widened camera
-        // projects the HUD/menus past the right edge of the 16:9 buffer and they get clipped.
-        if (g_render_scale == 1.0f && g_aspect_extra <= 1.0f) return v;
+        if (g_render_scale == 1.0f) return v;
         auto gp = std::make_shared<GraphicPack2>();
         gp->m_name = "BotWRecomp resolution";
         for (const Row& r : kRows) {
