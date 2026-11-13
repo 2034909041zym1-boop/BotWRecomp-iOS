@@ -241,11 +241,7 @@ void scaleMainScreen3DBonusStaminaPanes(uint32_t p, uint32_t sz) {
     if (isPane(p, "N_Size_05")) scalePaneNormal(p, sz);
 }
 void scaleMainScreen3DPickupPanes(uint32_t p, uint32_t sz) {
-    // Scaling N_Capture_00 / N_ModeItem_00 (what the Cemu pack does) makes the "weapon about to
-    // break" T_Name_00 text vanish on this port, leaving only the grey W_Base banner. Leave the
-    // notice banner at its native 16:9 width for now so the text renders; revisit once the
-    // text-rendering root cause is understood.
-    (void)p; (void)sz;
+    if (isPane(p, "N_Capture_00") || isPane(p, "N_ModeItem_00")) scalePaneNormal(p, sz);
 }
 void scaleMainScreen3DEnemyNoticePanes(uint32_t p, uint32_t sz) {
     if (isPane(p, "N_Change_00") || isPane(p, "N_Change_01")) scalePaneNormal(p, sz);
@@ -618,15 +614,6 @@ void scalePaneGUI(uint32_t pane, uint32_t sizePtr) {
 // Main pane-scaling hook: runs after `lwz r0,36(r30)` at 0x03C496B8. r31 = pane, r27 = size ptr.
 BOTW_HOOK(0x03c496b8) {
     if (g_aspect_extra <= 1.0f) return;
-    if (strcmp(g_screen, "MainScreen3D_00") == 0 && strcmp(g_subPanel, "Pa_NoticeItem_00") == 0) {
-        uint32_t pane = c->r[31], parent = c->r[30], sizePtr = c->r[27];
-        const char* pn = name(pane);
-        const char* parn = parent ? name(parent) : "null";
-        LOG("[notice] pane='%s' parent='%s' xs=%f xpos=%f ys=%f sizeW=%f",
-            pn ? pn : "?", parn ? parn : "?",
-            mem::rf32(pane + 0x34), mem::rf32(pane + 0x1C), mem::rf32(pane + 0x38),
-            mem::rf32(sizePtr));
-    }
     scalePaneGUI(c->r[31], c->r[27]);
 }
 
