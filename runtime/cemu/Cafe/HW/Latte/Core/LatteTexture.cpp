@@ -7,6 +7,7 @@
 #include "Cafe/HW/Latte/LatteAddrLib/LatteAddrLib.h"
 
 #include "Cafe/GraphicPack/GraphicPack2.h"
+#include "../../../../../src/log.h"
 
 #include <boost/container/small_vector.hpp>
 
@@ -1317,6 +1318,13 @@ LatteTexture::LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddre
 				this->overwriteInfo.anisotropicLevel = rule.overwrite_settings.anistropic_value;
 			}
 		}
+	}
+	// BotWRecomp hor+ diagnostics: log every resolution override so the effect of the widening
+	// rules can be checked from runtime.log (the font atlases are R8 = 0x816).
+	if (this->overwriteInfo.hasResolutionOverwrite)
+	{
+		if (this->overwriteInfo.width != (int)width || this->overwriteInfo.height != (int)height)
+			LOG("[tex-ow] %ux%u fmt=%04x tile=%d -> %ux%u", width, height, (uint32)format, (int)tileMode, this->overwriteInfo.width, this->overwriteInfo.height);
 	}
 	// determine if this texture should ever be mirrored to CPU RAM
 	bool readbackLinear = this->tileMode == Latte::E_HWTILEMODE::TM_LINEAR_ALIGNED;

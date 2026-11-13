@@ -614,6 +614,17 @@ void scalePaneGUI(uint32_t pane, uint32_t sizePtr) {
 // Main pane-scaling hook: runs after `lwz r0,36(r30)` at 0x03C496B8. r31 = pane, r27 = size ptr.
 BOTW_HOOK(0x03c496b8) {
     if (g_aspect_extra <= 1.0f) return;
+    // Diagnostics: dump the layout fields of every text pane, so a TextBox that draws nothing can
+    // be traced to its position/scale/size/alpha values instead of guesswork.
+    const char* pn = name(c->r[31]);
+    if (pn && pn[0] == 'T' && pn[1] == '_') {
+        const uint32_t q = c->r[31];
+        LOG("[tpane] scr='%s' sub='%s' n='%s' x=%.3f y=%.3f xs=%.3f ys=%.3f w=%.3f h=%.3f f44=%.3f f48=%.3f f4c=%.3f szw=%.3f",
+            g_screen, g_subPanel, pn,
+            mem::rf32(q + 0x1C), mem::rf32(q + 0x20), mem::rf32(q + 0x34), mem::rf32(q + 0x38),
+            mem::rf32(q + 0x3C), mem::rf32(q + 0x40), mem::rf32(q + 0x44), mem::rf32(q + 0x48),
+            mem::rf32(q + 0x4C), mem::rf32(c->r[27]));
+    }
     scalePaneGUI(c->r[31], c->r[27]);
 }
 
