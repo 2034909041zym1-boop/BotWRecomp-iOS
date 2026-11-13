@@ -4,7 +4,6 @@
 #include "Cafe/HW/Latte/ISA/LatteReg.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 
-#include <algorithm>
 #include <cmath>
 
 extern float g_render_scale;    // runtime: --scale
@@ -68,18 +67,6 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             // picture out. Skip format overrides whenever we only widen.
             o.format = (g_aspect_extra > 1.0f) ? -1 : r.overwrite_format;
             gp->m_rules.push_back(rule);
-            // The font atlas is a plain 1280x720 R8 texture, and it matches the multi-format
-            // 1280x720 screen rule below. Widening it to 1568x720 no longer matches the glyph data
-            // the game uploads, so every TextBox draws nothing. Append an R8-only rule after the
-            // screen rule so it wins for the atlas and keeps it at its authored size.
-            if (g_aspect_extra > 1.0f && r.width == 1280 && r.height == 720 && r.formats.size() > 1 &&
-                std::find(r.formats.begin(), r.formats.end(), 0x816u) != r.formats.end()) {
-                TextureRule fontRule = rule;
-                fontRule.filter_settings.format_whitelist = {0x816u};
-                fontRule.overwrite_settings.width = r.ow;
-                fontRule.overwrite_settings.height = r.oh;
-                gp->m_rules.push_back(fontRule);
-            }
         }
         v.push_back(gp);
         return v;
