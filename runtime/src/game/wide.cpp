@@ -24,13 +24,22 @@ void wide_apply(float aspect) {
     }
 }
 
-// Diagnostic: the camera pose keeps fov/aspect at +36/+40 (see tree_diag.cpp). Logging it confirms
-// whether the projection reads the aspect from there, which is the next place to patch if the
-// .data constants turn out not to drive the projection. Rate limited, wide mode only.
+// Diagnostic: the camera pose keeps fov/aspect at +36/+44 (see tree_diag.cpp). Logging it confirms
+// whether the projection reads the aspect from there. Rate limited, wide mode only.
 BOTW_HOOK(0x02c07ca8) {
     if (g_aspect_extra <= 1.0f) return;
     if (g_poseLogs.fetch_add(1, std::memory_order_relaxed) % 300 != 0) return;
     const uint32_t cam = c->r[3] + 1584;  // current pose
-    LOG("[wide] pose fov=%.4f aspect=%.4f near=%.4f far=%.4f", mem::rf32(cam + 36), mem::rf32(cam + 40),
-        mem::rf32(cam + 44), mem::rf32(cam + 48));
+    LOG("[wide] pose fov=%.4f f40=%.4f aspect=%.4f near=%.4f far=%.4f", mem::rf32(cam + 36), mem::rf32(cam + 40),
+        mem::rf32(cam + 44), mem::rf32(cam + 48), mem::rf32(cam + 52));
+}
+
+// f_02c07c84 copies the target pose into the current pose field by field; run right after the +44
+// copy and overwrite the aspect so the per-frame projection is built with the display aspect.
+BOTW_HOOK(0x02c08628) {
+    if (g_aspect_extra <= 1.0f) return;
+    const float aspect = g_aspect_extra * (16.0f / 9.0f);
+    const uint32_t cam = c->r[31];
+    mem::wf32(cam + 1472 + 44, aspect);
+    mem::wf32(cam + 1584 + 44, aspect);
 }
