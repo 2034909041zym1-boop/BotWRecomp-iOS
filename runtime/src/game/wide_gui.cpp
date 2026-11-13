@@ -539,6 +539,7 @@ void scalePaneGUI(uint32_t pane, uint32_t sizePtr) {
 
     // Screen-name dispatch.
     const char* s = g_screen;
+    LOG("[gui] scr='%s' pane='%s' sub='%s'", s, n ? n : "?", g_subPanel);
     if (strcmp(s, "BootUp_00") == 0) { scaleInOutToCenter(pane, sizePtr); return; }
     if (strcmp(s, "ChangeController_00") == 0 || strcmp(s, "ChangeControllerDRC_00") == 0) { scaleInOutScreenToRightSide(pane, sizePtr); return; }
     if (strcmp(s, "GamePadBG_00") == 0) { scaleRootToCenter(pane, sizePtr); return; }
@@ -638,6 +639,7 @@ BOTW_HOOK(0x02f60204) {
 // Weather-pane projection hook: runs after `stw r0,16(r4)` at 0x03C56CD0. r4 = projection object.
 BOTW_HOOK(0x03c56cd0) {
     if (g_aspect_extra <= 1.0f) return;
+    LOG("[gui-proj] sub='%s'", g_subPanel);
     if (strcmp(g_subPanel, "Pa_Weather_00") == 0) {
         mem::wf32(c->r[4] + 0x8, ar());  // proj_ScaleX
     }
