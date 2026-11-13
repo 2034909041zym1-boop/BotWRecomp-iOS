@@ -229,6 +229,7 @@ struct DecodedPicture {
     CVPixelBufferRef pb = nullptr;
     double pts = 0.0;
     uint64_t seq = 0;
+    uint32_t guest_buf = 0;
 };
 
 struct VtDecodeBatch {
@@ -359,9 +360,12 @@ struct H264Decoder {
 
     size_t reorder_limit() const {
         if (output_per_frame != 0 || profile_idc == 66) return 0;
-        // BotW MP4 cutscenes (e.g. Demo101_0.mp4) have ctts composition offsets up to 18 frames
-        // while allocating 30 guest frame buffer slots; hold >=18 frames so B-pyramids never emit out of order.
-        return std::clamp<size_t>(std::max<size_t>(max_num_ref_frames * 3, 18), 18, 22);
+        // Align with Cemu: buffered mode buffers numFramesToBuffer=5 frames before emitting.
+        // The previous 18-frame window over-buffered and starved the guest player's 30-slot
+        // frame-buffer pool, stalling MP4DecodeThread in its wait loop (lr 0x038c6708).
+        // num_reorder_frames for High@L4.0 is <= max_num_ref_frames, so a small window keeps
+        // B-pyramid emission in presentation order without the latency that stalled the guest.
+        return std::clamp<size_t>(max_num_ref_frames, 2, 5);
     }
 };
 
@@ -424,7 +428,7 @@ std::vector<EmittedFrame> drain_ordered_frames(H264Decoder& dec, size_t keep_cou
                                          if (a.pts != b.pts) return a.pts < b.pts;
                                          return a.seq < b.seq;
                                      });
-        uint32_t guest_buf = dec.held_guest_bufs.front();
+        uint32_t guest_buf = best->guest_buf;
         dec.held_guest_bufs.pop_front();
 
         write_nv12_to_guest(best->pb, guest_buf, dec.width, dec.height);
@@ -736,6 +740,7 @@ HLE_EXPORT(h264, H264DECExecute) {
             CVPixelBufferRelease(batch.pics[i].pb);
             continue;
         }
+        batch.pics[i].guest_buf = frame_buf;
         dec->reorder_queue.push_back(batch.pics[i]);
     }
 
