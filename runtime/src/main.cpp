@@ -118,9 +118,7 @@ int main(int argc, char** argv) {
         if (dw < dh) std::swap(dw, dh);  // the app is landscape-only; SDL may still report the portrait mode
         const float aspect = (float)dw / (float)std::max(dh, 1);
         if (aspect > 16.0f / 9.0f + 0.01f) {
-            const float nativeScale = std::clamp(dh / 720.0f, 1.0f, 3.0f);
-            if (opt.scale < nativeScale)  // never upscale: wide mode renders at least display height
-                g_render_scale = nativeScale;
+            g_render_scale = 1.0f;  // 720p height, widened horizontally; sharpen in a later pass
             g_aspect_extra = aspect / (16.0f / 9.0f);
             wide_apply(aspect);
             LOG("[wide] display %dx%d aspect %.4f, render targets widened %.4fx (%.0fx%.0f)",
