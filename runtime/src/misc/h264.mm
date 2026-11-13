@@ -273,6 +273,11 @@ struct H264Decoder {
     uint64_t decode_seq = 0;
     double last_emitted_pts = -1e18;
 
+    // Heartbeat counters (diagnostics for cutscene stalls)
+    uint64_t execute_calls = 0;
+    uint64_t emitted_total = 0;
+    uint64_t dropped_total = 0;
+
     ~H264Decoder() { destroy_session(); }
 
     void release_queued_pics() {
@@ -665,6 +670,11 @@ HLE_EXPORT(h264, H264DECExecute) {
                 st = VTDecompressionSessionDecodeFrame(dec->session, sample_buf, 0, &req, &info_flags);
             }
         }
+        if (st == noErr) {
+            // VideoToolbox decode is asynchronous; block until on_vt_decompressed has fired so
+            // `batch`/`req` (stack objects) are both populated and not dangling on return.
+            VTDecompressionSessionWaitForAsynchronousFrames(dec->session);
+        }
         if (st != noErr) {
             static std::atomic<uint32_t> vt_err_logs{0};
             if (vt_err_logs.fetch_add(1) < 10) {
@@ -676,6 +686,11 @@ HLE_EXPORT(h264, H264DECExecute) {
     CFRelease(sample_buf);
 
     if (st != noErr || batch.pics.empty()) {
+        dec->dropped_total++;
+        static std::atomic<uint32_t> empty_batch_logs{0};
+        if (empty_batch_logs.fetch_add(1) < 20) {
+            LOG("h264: H264DECExecute dropped frame: st=%d pics=%zu (async callback missing)", (int)st, batch.pics.size());
+        }
         for (auto& d : batch.pics) {
             if (d.pb) CVPixelBufferRelease(d.pb);
         }
@@ -696,7 +711,16 @@ HLE_EXPORT(h264, H264DECExecute) {
     const uint32_t fptr = dec->fptr_output;
     const uint32_t user_mem = dec->user_memory;
     std::vector<EmittedFrame> ready = drain_ordered_frames(*dec, dec->reorder_limit());
+    dec->emitted_total += ready.size();
     invoke_output_callback(c, mem_addr, fptr, user_mem, ready);
+
+    dec->execute_calls++;
+    if (dec->execute_calls % 90 == 0) {
+        LOG("h264: heartbeat %08x exec=%llu emitted=%llu dropped=%llu queue=%zu held=%zu limit=%zu opf=%u last_pts=%.3f",
+            mem_addr, (unsigned long long)dec->execute_calls, (unsigned long long)dec->emitted_total,
+            (unsigned long long)dec->dropped_total, dec->reorder_queue.size(), dec->held_guest_bufs.size(),
+            dec->reorder_limit(), dec->output_per_frame, dec->last_emitted_pts);
+    }
 
     RET(0x80);
 }
@@ -710,6 +734,10 @@ HLE_EXPORT(h264, H264DECEnd) {
         return;
     }
     if (dec->session) VTDecompressionSessionWaitForAsynchronousFrames(dec->session);
+    LOG("h264: H264DECEnd %08x exec=%llu emitted=%llu dropped=%llu queue=%zu held=%zu last_pts=%.3f",
+        mem_addr, (unsigned long long)dec->execute_calls, (unsigned long long)dec->emitted_total,
+        (unsigned long long)dec->dropped_total, dec->reorder_queue.size(), dec->held_guest_bufs.size(),
+        dec->last_emitted_pts);
     const uint32_t fptr = dec->fptr_output;
     const uint32_t user_mem = dec->user_memory;
     while (!dec->reorder_queue.empty() && !dec->held_guest_bufs.empty()) {
