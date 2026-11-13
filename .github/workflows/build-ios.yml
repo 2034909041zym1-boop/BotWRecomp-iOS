@@ -14,6 +14,8 @@ jobs:
   build:
     name: Build iOS IPA
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -137,3 +139,13 @@ jobs:
           name: BotWRecomp-iOS18-IPA
           path: build-ios/iphoneos/BotWRecomp.ipa
           retention-days: 14
+
+      - name: Publish IPA to Public Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ci-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create ci-latest build-ios/iphoneos/BotWRecomp.ipa \
+            --title "CI Build" \
+            --notes "Auto-published IPA (run $GITHUB_RUN_ID)" \
+            --latest
