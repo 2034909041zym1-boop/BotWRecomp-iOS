@@ -27,6 +27,8 @@ extern std::atomic<pthread_t> g_gpu_thread;  // cemu_shims/overlay_menu.cpp: Cem
 
 extern "C" int g_trace_hle;
 
+extern "C" bool h264_movie_stalled();  // misc/h264.mm: guest movie player stall detector
+
 static std::atomic<bool> g_app_in_background{false};
 static std::atomic<bool> g_app_terminating{false};
 static std::atomic<int> g_thermal_state{0};
@@ -529,6 +531,16 @@ void run() {
                     (unsigned long long)gf);
                 threads::dump(true);
                 dumped_ms = ms;
+            }
+        }
+        // Movie-stall watchdog: H264 decoder active but no decode calls for >2 s (foreground) -> dump guest threads.
+        {
+            static uint64_t movie_dump_ms = 0;
+            uint64_t ms = SDL_GetTicks();
+            if (!botw_is_background() && h264_movie_stalled() && (!movie_dump_ms || ms - movie_dump_ms > 10000)) {
+                LOG("watchdog: h264 movie stalled (no decode for >2 s), dumping guest threads:");
+                threads::dump(true);
+                movie_dump_ms = ms;
             }
         }
         // Slow-frame sampler: fewer than 6 game frames in the last second (foreground) -> log both LatteThread

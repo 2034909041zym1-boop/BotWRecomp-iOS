@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <deque>
@@ -20,6 +21,10 @@
 
 extern "C" bool botw_is_background();
 extern "C" void botw_wait_while_background();
+
+// Monotonic timestamp (ns) of the most recent H264DECExecute call; the host watchdog uses
+// this to detect a guest-side movie-player stall (no decode calls for >2 s).
+static std::atomic<uint64_t> g_h264_last_execute_ns{0};
 
 namespace {
 
@@ -477,6 +482,21 @@ void invoke_output_callback(PPCContext* c, uint32_t mem_addr, uint32_t fptr_outp
 
 }  // namespace
 
+// Exposed for the host watchdog: true when a movie decoder is active (has a VideoToolbox
+// session and an output callback) but has not received a H264DECExecute call for >2 s,
+// i.e. the guest-side movie player stopped feeding frames.
+extern "C" bool h264_movie_stalled() {
+    uint64_t last = g_h264_last_execute_ns.load(std::memory_order_relaxed);
+    if (!last) return false;
+    uint64_t now = (uint64_t)std::chrono::steady_clock::now().time_since_epoch().count();
+    if (now - last < 2000000000ULL) return false;  // < 2 s
+    std::lock_guard<std::mutex> l(g_decoders_mu);
+    for (auto& kv : g_decoders) {
+        if (kv.second->session && kv.second->fptr_output) return true;
+    }
+    return false;
+}
+
 // H264DECGetImageSize(const void* buffer, uint32 totalBytes, uint32 offset, uint32* outW, uint32* outH)
 HLE_EXPORT(h264, H264DECGetImageSize) {
     const uint32_t buf_addr = ARG(0);
@@ -570,6 +590,8 @@ HLE_EXPORT(h264, H264DECSetBitstream) {
 // H264DECExecute(void* mem, void* frameBuffer)
 // Returns 0x80 when `frameBuffer` is retained/emitted via FPTR_OUTPUT (BotW keeps the slot occupied until rendered).
 HLE_EXPORT(h264, H264DECExecute) {
+    g_h264_last_execute_ns.store((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count(),
+                                 std::memory_order_relaxed);
     const uint32_t mem_addr = ARG(0);
     const uint32_t frame_buf = ARG(1);
     auto dec = get_decoder(mem_addr);
