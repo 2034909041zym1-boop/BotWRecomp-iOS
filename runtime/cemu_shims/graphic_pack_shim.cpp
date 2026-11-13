@@ -51,16 +51,13 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             // GX2 textures expect a 32-pixel pitch alignment; 1280 * 1.2229 = 1565 is not aligned.
             int ow = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
             if (g_aspect_extra > 1.0f) {
-                // Only the full-screen 16:9 targets are genuinely widened by hor+. The rest of
-                // the resolution rule set is authored at a fixed pixel size and laid out by the
-                // game in that exact space: the font atlases (1024x512 / 512x512 / 512x256, R8 =
-                // 0x816) and the per-line glyph buffers (512x96 / 480x32 / 464x28). Stretching
-                // those horizontally corrupts the glyph UVs, so every TextBox draws nothing while
-                // sprite-based HUD numbers still look fine. Keep their authored width.
-                const bool onlyR8 = (r.formats.size() == 1 && r.formats[0] == 0x816);
-                const bool full169 =
-                    r.height > 0 && std::fabs((double)r.width / (double)r.height - 16.0 / 9.0) < 0.02;
-                ow = (!full169 || onlyR8) ? r.ow : ((ow + 31) & ~31);
+                // Do not widen the pure-R8 textures: those are the font atlases (1024x512 /
+                // 512x512 / 512x256 / 256x128 / ...). The game lays glyphs out in that exact pixel
+                // space, so a horizontally stretched atlas no longer matches the uploaded data and
+                // every TextBox draws nothing, while sprite-based HUD numbers still look fine.
+                // Every other target keeps the full-screen widening it had before.
+                const bool fontAtlas = (r.formats.size() == 1 && r.formats[0] == 0x816);
+                ow = fontAtlas ? r.ow : ((ow + 31) & ~31);
             }
             o.width = ow;
             o.height = (int)(g_render_scale * r.oh + r.oh_add);
