@@ -67,7 +67,7 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
     g_result = 0;
 
     UIView* host = (__bridge UIView*)botw_ui_root_view();
-    LOG("[swkbd-ui] show init='%s' max=%u host=%p", g_text, g_maxLen, (void*)host);
+    LOG("[swkbd-ui] show init='%s' max=%u host=%p", g_text, g_maxLen, (__bridge void*)host);
     if (!host) return;
     const CGRect bounds = host.bounds;
     const CGFloat w = bounds.size.width;
