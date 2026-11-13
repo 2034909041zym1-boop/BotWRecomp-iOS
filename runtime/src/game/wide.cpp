@@ -23,13 +23,14 @@ void wide_apply(float aspect) {
 }
 
 // Every-frame 3D projection: v208 loads the aspect here into f12 (Cemu patches the lis/lfs pair).
-BOTW_HOOK(0x0386D020) {
+// The address must be lower case: it becomes part of the C symbol hook_0x0386d020.
+BOTW_HOOK(0x0386d020) {
     if (g_aspect_extra <= 1.0f) return;
     c->f[12] = (double)(k16x9 * g_aspect_extra);
 }
 
 // Inventory 3D preview: v208 loads the aspect here into f4.
-BOTW_HOOK(0x02E2C578) {
+BOTW_HOOK(0x02e2c578) {
     if (g_aspect_extra <= 1.0f) return;
     c->f[4] = (double)(k16x9 * g_aspect_extra);
 }
