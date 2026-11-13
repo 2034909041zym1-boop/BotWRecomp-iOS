@@ -28,7 +28,6 @@ bool g_mute = false;       // no audio output (on-screen test runs)
 int g_run_seconds = 0;     // --seconds N: exit after N seconds (tests)
 float g_render_scale = 0;  // --scale N: render targets N times the native 1280x720 (graphic_pack_shim.cpp); 0 = fit the display
 float g_aspect_extra = 1.0f;  // hor+ mode: horizontal widening of the render targets (display aspect / 16:9)
-void wide_apply(float aspect);  // game/wide.cpp: patch the guest's TV aspect ratio
 int g_target_fps = 60;       // --fps 30: the game's own pacing (game/fps.cpp)
 uint64_t g_trace_from = 0, g_trace_to = 0;  // --trace-frames A-B: HLE call trace for frames [A, B)
 
@@ -120,7 +119,6 @@ int main(int argc, char** argv) {
         if (aspect > 16.0f / 9.0f + 0.01f) {
             g_render_scale = 1.0f;  // 720p height, widened horizontally; sharpen in a later pass
             g_aspect_extra = aspect / (16.0f / 9.0f);
-            wide_apply(aspect);
             LOG("[wide] display %dx%d aspect %.4f, render targets widened %.4fx (%.0fx%.0f)",
                 dw, dh, aspect, g_aspect_extra, 1280.0f * g_render_scale * g_aspect_extra, 720.0f * g_render_scale);
         }
