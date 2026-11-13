@@ -51,13 +51,14 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             // GX2 textures expect a 32-pixel pitch alignment; 1280 * 1.2229 = 1565 is not aligned.
             int ow = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
             if (g_aspect_extra > 1.0f) {
-                // Do not widen the pure-R8 textures: those are the font atlases (1024x512 /
-                // 512x512 / 512x256 / 256x128 / ...). The game lays glyphs out in that exact pixel
-                // space, so a horizontally stretched atlas no longer matches the uploaded data and
-                // every TextBox draws nothing, while sprite-based HUD numbers still look fine.
-                // Every other target keeps the full-screen widening it had before.
+                // A single line of blyt text is rendered into a narrow strip of its own
+                // (512x96 / 500x94 / 480x32 / 464x28 - runtime.log shows 464x28 rgba8 being
+                // rewritten to 576x28). Widening that strip breaks the glyph layout, so every
+                // TextBox comes out blank while sprite-based HUD numbers still look fine.
+                // Keep such strips, and the pure-R8 atlases, at their authored width.
+                const bool glyphStrip = (r.height <= 96 && r.width >= 400 && r.width <= 512);
                 const bool fontAtlas = (r.formats.size() == 1 && r.formats[0] == 0x816);
-                ow = fontAtlas ? r.ow : ((ow + 31) & ~31);
+                ow = (glyphStrip || fontAtlas) ? r.ow : ((ow + 31) & ~31);
             }
             o.width = ow;
             o.height = (int)(g_render_scale * r.oh + r.oh_add);
