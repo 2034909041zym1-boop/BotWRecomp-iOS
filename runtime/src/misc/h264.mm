@@ -445,7 +445,8 @@ std::vector<EmittedFrame> drain_ordered_frames(H264Decoder& dec, size_t keep_cou
 }
 
 void invoke_output_callback(PPCContext* c, uint32_t mem_addr, uint32_t fptr_output, uint32_t user_memory,
-                            const std::vector<EmittedFrame>& frames) {
+                            const std::vector<EmittedFrame>& frames, uint32_t width, uint32_t height,
+                            uint32_t bytes_per_row) {
     if (!fptr_output || frames.empty()) return;
 
     const uint32_t count = (uint32_t)std::min<size_t>(frames.size(), kMaxBatchOutputs);
@@ -458,10 +459,16 @@ void invoke_output_callback(PPCContext* c, uint32_t mem_addr, uint32_t fptr_outp
     for (uint32_t i = 0; i < count; i++) {
         const uint32_t res_addr = mem_addr + kGuestResultsBaseOff + i * kGuestResultStride;
         memset(mem::host(res_addr), 0, kGuestResultStride);
-        mem::w32(res_addr + 0x00, 1);
+        // H264DecodeResult layout (matches console / Cemu H264DECFrameOutput):
+        //   +0x00 status (100 = success), +0x08 timestamp, +0x10 width, +0x14 height,
+        //   +0x18 bytesPerRow (NV12 Y-stride), +0x44 framebuffer (guest image ptr).
+        mem::w32(res_addr + 0x00, 100);
         uint64_t pts_bits = 0;
         memcpy(&pts_bits, &frames[i].pts, sizeof(pts_bits));
         mem::w64(res_addr + 0x08, pts_bits);
+        mem::w32(res_addr + 0x10, width);
+        mem::w32(res_addr + 0x14, height);
+        mem::w32(res_addr + 0x18, bytes_per_row);
         mem::w32(res_addr + 0x44, frames[i].guest_buf);
         mem::w32(ptrs_addr + i * 4, res_addr);
     }
@@ -588,7 +595,9 @@ HLE_EXPORT(h264, H264DECSetBitstream) {
 }
 
 // H264DECExecute(void* mem, void* frameBuffer)
-// Returns 0x80 when `frameBuffer` is retained/emitted via FPTR_OUTPUT (BotW keeps the slot occupied until rendered).
+// Returns 0x80|100 (0xE4) on success: bit 0x80 signals a frame was emitted, low bits carry the
+// decode result status (100). Console/Cemu return this regardless of whether this exact call
+// emitted a frame; BotW uses it to advance its guest frame-buffer slot state.
 HLE_EXPORT(h264, H264DECExecute) {
     g_h264_last_execute_ns.store((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count(),
                                  std::memory_order_relaxed);
@@ -732,9 +741,10 @@ HLE_EXPORT(h264, H264DECExecute) {
 
     const uint32_t fptr = dec->fptr_output;
     const uint32_t user_mem = dec->user_memory;
+    const uint32_t pitch = (dec->width + 255u) & ~255u;
     std::vector<EmittedFrame> ready = drain_ordered_frames(*dec, dec->reorder_limit());
     dec->emitted_total += ready.size();
-    invoke_output_callback(c, mem_addr, fptr, user_mem, ready);
+    invoke_output_callback(c, mem_addr, fptr, user_mem, ready, dec->width, dec->height, pitch);
 
     dec->execute_calls++;
     if (dec->execute_calls % 90 == 0) {
@@ -744,7 +754,7 @@ HLE_EXPORT(h264, H264DECExecute) {
             dec->reorder_limit(), dec->output_per_frame, dec->last_emitted_pts);
     }
 
-    RET(0x80);
+    RET(0x80 | 100);
 }
 
 // H264DECEnd(void* mem): flush remaining delayed frames in presentation order
@@ -762,10 +772,11 @@ HLE_EXPORT(h264, H264DECEnd) {
         dec->last_emitted_pts);
     const uint32_t fptr = dec->fptr_output;
     const uint32_t user_mem = dec->user_memory;
+    const uint32_t pitch = (dec->width + 255u) & ~255u;
     while (!dec->reorder_queue.empty() && !dec->held_guest_bufs.empty()) {
         std::vector<EmittedFrame> ready = drain_ordered_frames(*dec, 0);
         if (ready.empty()) break;
-        invoke_output_callback(c, mem_addr, fptr, user_mem, ready);
+        invoke_output_callback(c, mem_addr, fptr, user_mem, ready, dec->width, dec->height, pitch);
     }
     dec->release_queued_pics();
     RET(0);
