@@ -28,7 +28,9 @@ const Row kRows[] = {
 const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphicPacks() {
     static std::vector<std::shared_ptr<GraphicPack2>> packs = [] {
         std::vector<std::shared_ptr<GraphicPack2>> v;
-        if (g_render_scale == 1.0f) return v;
+        // hor+ needs the screen targets resized even at scale 1.0, otherwise the widened camera
+        // projects the HUD/menus past the right edge of the 16:9 buffer and they get clipped.
+        if (g_render_scale == 1.0f && g_aspect_extra <= 1.0f) return v;
         auto gp = std::make_shared<GraphicPack2>();
         gp->m_name = "BotWRecomp resolution";
         for (const Row& r : kRows) {
@@ -42,11 +44,14 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             f.tilemode_whitelist = r.tilemodes;
             f.tilemode_blacklist = r.tilemodes_excluded;
             auto& o = rule.overwrite_settings;
-            // hor+: widen only the screen-space render targets, so their aspect follows the display.
-            // Square targets (shadow maps, LUTs) keep their size.
-            const bool screenTarget = r.oh > 0 && std::fabs((double)r.ow / (double)r.oh - 16.0 / 9.0) < 0.02;
-            const double widthScale = g_render_scale * (screenTarget ? g_aspect_extra : 1.0f);
-            o.width = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
+            // hor+: every screen-space target scales by the same width factor the game's own
+            // resolution rule uses (Cemu's aspect-ratio pack does the same), so the non-16:9
+            // targets stay consistent with the main framebuffer.
+            const double widthScale = g_render_scale * g_aspect_extra;
+            // GX2 textures expect a 32-pixel pitch alignment; 1280 * 1.2229 = 1565 is not aligned.
+            int ow = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
+            if (g_aspect_extra > 1.0f) ow = (ow + 31) & ~31;
+            o.width = ow;
             o.height = (int)(g_render_scale * r.oh + r.oh_add);
             o.format = r.overwrite_format;
             gp->m_rules.push_back(rule);
