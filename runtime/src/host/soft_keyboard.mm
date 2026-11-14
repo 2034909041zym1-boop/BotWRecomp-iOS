@@ -123,12 +123,16 @@ extern "C" void swkbd_ui_hide(void) {
     });
 }
 
-// Lets UIKit deliver typing and keyboard events while the emulator keeps the main thread.
+// Lets UIKit deliver typing and keyboard events while the emulator keeps the main thread. The
+// timeout must be non-zero: with 0 the run loop returns before any asynchronously posted touch
+// event arrives, which is why key presses did nothing.
 extern "C" void swkbd_ui_pump(void) {
     if (!g_shown) return;
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.003, false);
     [CATransaction flush];
 }
+
+extern "C" int swkbd_ui_active(void) { return g_shown; }
 
 extern "C" int swkbd_ui_poll(void) { return g_result; }
 

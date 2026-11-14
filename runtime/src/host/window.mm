@@ -11,6 +11,7 @@
 
 #if TARGET_OS_IOS
 extern "C" void swkbd_ui_precreate();  // host/soft_keyboard.mm
+extern "C" int swkbd_ui_active();
 #endif
 
 #include <atomic>
@@ -405,8 +406,13 @@ void on_frame(uint64_t f) {
     if (g_trace_to) g_trace_hle = f >= g_trace_from && f < g_trace_to;
 #if TARGET_OS_IOS
     // Run the main run loop briefly so main-queue blocks, UIKit events and CoreAnimation commits are
-    // serviced; the emulator keeps the thread busy and nothing else would run them.
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
+    // serviced; the emulator keeps the thread busy and nothing else would run them. While the
+    // keyboard is up, wait long enough for asynchronously delivered touch events to arrive.
+    if (swkbd_ui_active()) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.004, false);
+    } else {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
+    }
     // Build the swkbd text field once the surface has a real size.
     static bool keyboard_built = false;
     if (!keyboard_built && f >= 2) {
