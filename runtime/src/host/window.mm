@@ -397,8 +397,20 @@ void display_pixel_size(int* w, int* h) {
 }
 
 void on_frame(uint64_t f) {
+#if TARGET_OS_IOS
+    extern "C" void swkbd_ui_precreate();
+#endif
     g_frame = f;
     if (g_trace_to) g_trace_hle = f >= g_trace_from && f < g_trace_to;
+#if TARGET_OS_IOS
+    // Build the swkbd keyboard panel once the surface has a real size. Building it on demand stalled
+    // the emulator loop for ~11 s because UIKit work blocks while we own the main thread.
+    static bool keyboard_built = false;
+    if (!keyboard_built && f >= 2) {
+        keyboard_built = true;
+        swkbd_ui_precreate();
+    }
+#endif
 }
 SDL_Window* g_win_ptr() { return g_win; }
 bool quit_requested() { return g_quit; }

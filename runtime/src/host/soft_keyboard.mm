@@ -2,8 +2,8 @@
 //
 // BotW's KeyBoradTextArea_00 only draws the answer text and the cursor; the keys themselves come
 // from the Wii U system keyboard (Cemu draws them with ImGui). This port has no ImGui overlay, and
-// presenting a UIAlertController from the emulator main loop crashed, so this is a self-drawn
-// button grid added as a subview - no system keyboard, no modal presentation.
+// building the panel on demand froze the game for ~11 s because the emulator loop owns the main
+// thread, so the panel is built once early (swkbd_ui_precreate) and afterwards only hidden/shown.
 #include <TargetConditionals.h>
 
 #if TARGET_OS_IOS
@@ -47,39 +47,21 @@ void backspace() {
     refresh_label();
 }
 
-void close_panel() {
-    if (g_panel) {
-        [g_panel removeFromSuperview];
-        g_panel = nil;
-        g_field = nil;
-    }
+void hide_panel() {
+    if (g_panel) g_panel.hidden = YES;
     g_shown = 0;
 }
 
-}  // namespace
-
-extern "C" void swkbd_ui_show(const char* initial, int max_len) {
-    if (g_shown) return;
-    g_maxLen = max_len > 0 ? (uint32_t)max_len : 20;
-    if (g_maxLen > kMaxText) g_maxLen = kMaxText;
-    strncpy(g_text, initial ? initial : "", sizeof(g_text) - 1);
-    g_text[sizeof(g_text) - 1] = 0;
-    g_result = 0;
-
-    UIView* host = (__bridge UIView*)botw_ui_root_view();
-    LOG("[swkbd-ui] show init='%s' max=%u host=%p", g_text, g_maxLen, (__bridge void*)host);
-    if (!host) return;
+void build_panel(UIView* host) {
     const CGRect bounds = host.bounds;
     const CGFloat w = bounds.size.width;
     const CGFloat h = bounds.size.height;
-    if (w <= 0 || h <= 0) {
-        LOG("[swkbd-ui] empty bounds %.0fx%.0f", w, h);
-        return;
-    }
 
     UIView* panel = [[UIView alloc] initWithFrame:CGRectMake(0, h * 0.30, w, h * 0.70)];
     panel.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.88];
     panel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    panel.hidden = YES;
+    panel.layer.zPosition = 10000;  // above the Metal layer's sibling views
 
     const CGFloat pad = 8;
     const CGFloat fieldH = 40;
@@ -91,21 +73,20 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
     field.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.12];
     field.font = [UIFont systemFontOfSize:26];
     field.textAlignment = NSTextAlignmentLeft;
-    field.text = [NSString stringWithUTF8String:g_text];
+    field.text = @"";
     [panel addSubview:field];
     g_field = field;
     y += fieldH + pad;
 
-    // Four rows of keys: a-z, then space / delete / cancel / ok. Send actions are added inline so
-    // no selector table is needed.
+    // a-z, then space / delete / cancel / ok.
     const char* rows[] = {"abcdefghij", "klmnopqrst", "uvwxyz"};
     for (int r = 0; r < 3; r++) {
         const char* keys = rows[r];
         const size_t count = strlen(keys);
         const CGFloat bw = (w - pad * (count + 1)) / count;
         for (size_t i = 0; i < count; i++) {
-            char label[2] = {keys[i], 0};
             const char ch = keys[i];
+            char label[2] = {ch, 0};
             UIButton* b = [UIButton buttonWithType:UIButtonTypeSystem];
             b.frame = CGRectMake(pad + i * (bw + pad), y, bw, rowH);
             [b setTitle:[NSString stringWithUTF8String:label] forState:UIControlStateNormal];
@@ -131,19 +112,53 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
         [b addAction:[UIAction actionWithHandler:^(UIAction*) {
             if (kind == 0) append_char(' ');
             else if (kind == 1) backspace();
-            else if (kind == 2) { g_result = 2; close_panel(); }
-            else { g_result = 1; close_panel(); }
+            else if (kind == 2) { g_result = 2; hide_panel(); }
+            else { g_result = 1; hide_panel(); }
         }] forControlEvents:UIControlEventTouchUpInside];
         [panel addSubview:b];
     }
 
     [host addSubview:panel];
     g_panel = panel;
-    g_shown = 1;
-    LOG("[swkbd-ui] panel added %.0fx%.0f", w, h);
+    LOG("[swkbd-ui] built %.0fx%.0f", w, h);
 }
 
-extern "C" void swkbd_ui_hide(void) { close_panel(); }
+}  // namespace
+
+// Called once a few frames in, while the game is already running but before any keyboard is needed.
+extern "C" void swkbd_ui_precreate(void) {
+    if (g_panel) return;
+    UIView* host = (__bridge UIView*)botw_ui_root_view();
+    if (!host || host.bounds.size.width <= 0) {
+        LOG("[swkbd-ui] precreate deferred (host=%p)", (__bridge void*)host);
+        return;
+    }
+    build_panel(host);
+}
+
+extern "C" void swkbd_ui_show(const char* initial, int max_len) {
+    if (g_shown) return;
+    g_maxLen = max_len > 0 ? (uint32_t)max_len : 20;
+    if (g_maxLen > kMaxText) g_maxLen = kMaxText;
+    strncpy(g_text, initial ? initial : "", sizeof(g_text) - 1);
+    g_text[sizeof(g_text) - 1] = 0;
+    g_result = 0;
+
+    if (!g_panel) {
+        UIView* host = (__bridge UIView*)botw_ui_root_view();
+        LOG("[swkbd-ui] show: building late host=%p", (__bridge void*)host);
+        if (!host) return;
+        build_panel(host);
+        if (!g_panel) return;
+    }
+    refresh_label();
+    g_panel.hidden = NO;
+    [g_panel.superview bringSubviewToFront:g_panel];
+    g_shown = 1;
+    LOG("[swkbd-ui] shown init='%s' max=%u", g_text, g_maxLen);
+}
+
+extern "C" void swkbd_ui_hide(void) { hide_panel(); }
 
 // 0 = still open, 1 = accepted, 2 = cancelled.
 extern "C" int swkbd_ui_poll(void) { return g_result; }
