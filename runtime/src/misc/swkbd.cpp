@@ -138,11 +138,15 @@ void set_text_from_guest(uint32_t src) {
 void poll_host_keyboard() {
     if (!kHasHostKeyboard || !g_active) return;
     swkbd_ui_pump();
+
+    // Mirror the field into the guest buffer every frame. BotW's KeyBoradTextArea_00 draws the swkbd
+    // form text itself, so syncing only on accept left its answer box empty while typing.
+    char buf[512];
+    swkbd_ui_text(buf, (int)sizeof(buf));
+    g_formLen = utf8_to_utf16(buf, g_form, g_maxLen);
+
     const int r = swkbd_ui_poll();
     if (r == 1 || r == 2) {
-        char buf[512];
-        swkbd_ui_text(buf, (int)sizeof(buf));
-        g_formLen = utf8_to_utf16(buf, g_form, g_maxLen);
         if (g_formLen == 0) {
             for (uint32_t i = 0; i < 5; i++) g_form[i] = kDefaultName[i];
             g_formLen = 5;
