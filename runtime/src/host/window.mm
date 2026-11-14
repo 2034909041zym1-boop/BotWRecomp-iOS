@@ -13,6 +13,8 @@
 extern "C" void swkbd_ui_precreate();  // cemu_shims/soft_keyboard.cpp
 extern "C" int swkbd_ui_active();
 extern "C" void swkbd_ui_input(uint32_t buttons, float lx, float ly);
+extern "C" void ios_motion_start();       // src/host/ios_motion.mm: phone sensors -> input::motion_sensor
+extern "C" void ios_motion_stop();
 #endif
 
 #include <atomic>
@@ -37,6 +39,7 @@ extern "C" bool h264_movie_stalled();  // misc/h264.mm: guest movie player stall
 
 static std::atomic<bool> g_app_in_background{false};
 static std::atomic<bool> g_app_terminating{false};
+static bool g_use_gyro = true;  // --no-gyro / settings (read by the background handler too)
 static std::atomic<int> g_thermal_state{0};
 static std::atomic<bool> g_low_power_mode{false};
 static std::mutex g_bg_lock;
@@ -97,6 +100,13 @@ static void set_background_state(bool bg, const char* source) {
     g_bg_cv.notify_all();
     LOG("app %s (%s)", bg ? "entered the background" : "returning to the foreground", source);
     refresh_thermal_state(bg ? "bg:enter" : "fg:return");
+#if TARGET_OS_IOS
+    // CoreMotion stops delivering updates once the app is backgrounded; restart on return.
+    if (g_use_gyro) {
+        if (bg) ios_motion_stop();
+        else ios_motion_start();
+    }
+#endif
     if (!bg) latte::notify_foreground();
 }
 
@@ -191,7 +201,6 @@ SDL_Window* g_win = nullptr;
 std::atomic<bool> g_quit{false};
 std::atomic<uint64_t> g_frame{0};
 SDL_Gamepad* g_pad = nullptr;
-bool g_use_gyro = true;  // --no-gyro / settings
 bool g_use_rumble = true;
 int g_layout = 0;  // 0: A = right face button (Nintendo positions), 1: A = bottom face button (labels)
 std::atomic<int> g_draw_w{1280}, g_draw_h{720};
@@ -394,6 +403,10 @@ void set_gyro(bool on) {
         SDL_SetGamepadSensorEnabled(g_pad, SDL_SENSOR_ACCEL, on);
     }
     input::motion_reset();
+#if TARGET_OS_IOS
+    if (on) ios_motion_start();  // the phone is the only motion source here
+    else ios_motion_stop();
+#endif
 }
 void set_rumble(bool on) {
     g_use_rumble = on;
@@ -451,6 +464,9 @@ void create() {
     latte::create_renderer((__bridge void*)nswin.contentView, pw, ph);
 #endif
     LOG("window %dx%d (%dx%d pixels)%s", pw, ph, w, h, g_headless ? ", hidden" : "");
+#if TARGET_OS_IOS
+    if (g_use_gyro) ios_motion_start();  // no gamepad sensors on a phone: take the phone's own
+#endif
 }
 
 void run() {
