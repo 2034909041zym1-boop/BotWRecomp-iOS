@@ -16,6 +16,10 @@
 
 #include "../log.h"
 
+namespace window {
+SDL_Window* g_win_ptr();  // host/window.mm
+}
+
 namespace {
 
 constexpr int kMaxText = 127;
@@ -41,7 +45,7 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
     // Starting text input calls becomeFirstResponder, which FBSScene only allows on the main run
     // loop's serial queue, so hand it to the main queue (serviced by the frame pump).
     dispatch_async(dispatch_get_main_queue(), ^{
-        SDL_StartTextInput();
+        SDL_StartTextInput(window::g_win_ptr());
         LOG("[swkbd-ui] SDL text input started");
     });
     LOG("[swkbd-ui] show init='%s' max=%u", g_text, g_maxLen);
@@ -49,7 +53,7 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
 
 extern "C" void swkbd_ui_hide(void) {
     g_shown = 0;
-    dispatch_async(dispatch_get_main_queue(), ^{ SDL_StopTextInput(); });
+    dispatch_async(dispatch_get_main_queue(), ^{ SDL_StopTextInput(window::g_win_ptr()); });
 }
 
 // Called from the SDL event loop for SDL_EVENT_TEXT_INPUT.
