@@ -47,25 +47,28 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             // hor+: every screen-space target scales by the same width factor the game's own
             // resolution rule uses (Cemu's aspect-ratio pack does the same), so the non-16:9
             // targets stay consistent with the main framebuffer.
-            const double widthScale = g_render_scale * g_aspect_extra;
-            // GX2 textures expect a 32-pixel pitch alignment; 1280 * 1.2229 = 1565 is not aligned.
-            int ow = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
-            if (g_aspect_extra > 1.0f) {
-                // A single line of blyt text is rendered into its own RGBA8 (0x01a) + tiled
-                // (0x004) strip, from the 293x185 title banner down to 464x28 body text
-                // (runtime.log shows 464x28 being rewritten to 576x28). Widening the strip breaks
-                // the glyph layout, so every TextBox comes out blank while sprite-based HUD
-                // numbers still look fine. The title strip (293x185) is near-square and fails any
-                // "strongly letterboxed" ratio test, so key on format+tilemode instead of size:
-                // that catches all five strips without touching the 16:9 screen targets.
-                const bool glyphStrip =
-                    (r.formats.size() == 1 && r.formats[0] == 0x01a &&
-                     r.tilemodes.size() == 1 && r.tilemodes[0] == 0x004);
-                const bool fontAtlas = (r.formats.size() == 1 && r.formats[0] == 0x816);
-                ow = (glyphStrip || fontAtlas) ? r.ow : ((ow + 31) & ~31);
+            // A single line of blyt text is rendered into its own RGBA8 (0x01a) + tiled
+            // (0x004) strip, from the 293x185 title banner down to 464x28 body text.
+            // Stretching or shrinking font atlases (0x816 / R8) or glyph strips (0x01a + 0x004)
+            // corrupts glyph UVs, causing missing/clipped characters in TextBoxes.
+            const bool glyphStrip =
+                (r.formats.size() == 1 && r.formats[0] == 0x01a &&
+                 r.tilemodes.size() == 1 && r.tilemodes[0] == 0x004);
+            const bool fontAtlas =
+                (r.formats.size() == 1 &&
+                 (r.formats[0] == 0x816 ||
+                  (r.formats[0] == 0x001 && r.tilemodes.size() == 1 && r.tilemodes[0] == 0x004)));
+            if ((glyphStrip || fontAtlas) && (g_aspect_extra > 1.0f || g_render_scale < 1.0f)) {
+                o.width = r.ow;
+                o.height = r.oh;
+            } else {
+                const double widthScale = g_render_scale * g_aspect_extra;
+                // GX2 textures expect a 32-pixel pitch alignment; 1280 * 1.2229 = 1565 is not aligned.
+                int ow = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
+                if (g_aspect_extra > 1.0f) ow = (ow + 31) & ~31;
+                o.width = ow;
+                o.height = (int)(g_render_scale * r.oh + r.oh_add);
             }
-            o.width = ow;
-            o.height = (int)(g_render_scale * r.oh + r.oh_add);
             // Cemu's 10-bit -> 16-bit UNORM color-buffer upgrade is a *resolution* feature, not an
             // aspect-ratio feature. In hor+ (wider frustum, scale stays 1.0) rewriting the HDR
             // buffers changes their bit depth without the matching tonemap path and washes the
