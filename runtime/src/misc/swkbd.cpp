@@ -233,6 +233,11 @@ HLE_EXPORT(swkbd, SwkbdGetInputFormString__3RplFv) {
     ensure_string_buffer();
     for (uint32_t i = 0; i < g_formLen; i++) mem::w16(g_stringAddr + i * 2, g_form[i]);
     mem::w16(g_stringAddr + g_formLen * 2, 0);
+    static uint32_t lastLen = 0xFFFFFFFF;
+    if (g_formLen != lastLen) {
+        lastLen = g_formLen;
+        LOG("[swkbd] game reads form len=%u", g_formLen);
+    }
     RET(g_stringAddr);
 }
 HLE_EXPORT(swkbd, SwkbdSetInputFormString__3RplFPCw) { set_text_from_guest(ARG(0)); }

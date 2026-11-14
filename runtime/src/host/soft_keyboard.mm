@@ -80,6 +80,9 @@ extern "C" void swkbd_ui_precreate(void) {
     field.autocapitalizationType = UITextAutocapitalizationTypeNone;
     field.spellCheckingType = UITextSpellCheckingTypeNo;
     field.returnKeyType = UIReturnKeyDone;
+    // The Wii U keyboard is ASCII-only, and a CJK IME would leave the text empty while composing
+    // pinyin, so ask for an ASCII keyboard outright.
+    field.keyboardType = UIKeyboardTypeASCIICapable;
     field.textColor = [UIColor clearColor];
     [field addAction:[UIAction actionWithHandler:^(UIAction*) { copy_from_field(); }]
         forControlEvents:UIControlEventEditingChanged];
@@ -131,6 +134,7 @@ extern "C" int swkbd_ui_poll(void) { return g_result; }
 
 extern "C" void swkbd_ui_text(char* out, int cap) {
     if (!out || cap <= 0) return;
+    copy_from_field();  // read the field directly so a missed editingChanged cannot lose keystrokes
     strncpy(out, g_text, (size_t)cap - 1);
     out[cap - 1] = 0;
 }
