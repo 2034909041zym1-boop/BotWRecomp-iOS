@@ -404,8 +404,10 @@ void on_frame(uint64_t f) {
     g_frame = f;
     if (g_trace_to) g_trace_hle = f >= g_trace_from && f < g_trace_to;
 #if TARGET_OS_IOS
-    // Build the swkbd keyboard panel once the surface has a real size. Building it on demand stalled
-    // the emulator loop for ~11 s because UIKit work blocks while we own the main thread.
+    // Run the main run loop briefly so main-queue blocks, UIKit events and CoreAnimation commits are
+    // serviced; the emulator keeps the thread busy and nothing else would run them.
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
+    // Build the swkbd text field once the surface has a real size.
     static bool keyboard_built = false;
     if (!keyboard_built && f >= 2) {
         keyboard_built = true;

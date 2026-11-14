@@ -100,14 +100,24 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
     copy_from_field();
     g_result = 0;
     g_shown = 1;
-    [g_field becomeFirstResponder];
-    LOG("[swkbd-ui] keyboard up init='%s' max=%u responder=%d", g_text, g_maxLen,
-        (int)g_field.isFirstResponder);
+    // becomeFirstResponder goes through FBSScene, which asserts that it runs on the main run loop's
+    // serial queue. Calling it straight from the guest thread traps (SIGTRAP in
+    // FBSMainRunLoopSerialQueue assertBarrierOnQueue), so hand it to the main queue; the frame pump
+    // services it a frame later.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (g_shown && g_field) {
+            [g_field becomeFirstResponder];
+            LOG("[swkbd-ui] keyboard up responder=%d", (int)g_field.isFirstResponder);
+        }
+    });
+    LOG("[swkbd-ui] show init='%s' max=%u", g_text, g_maxLen);
 }
 
 extern "C" void swkbd_ui_hide(void) {
-    if (g_field && g_field.isFirstResponder) [g_field resignFirstResponder];
     g_shown = 0;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (g_field && g_field.isFirstResponder) [g_field resignFirstResponder];
+    });
 }
 
 // Lets UIKit deliver typing and keyboard events while the emulator keeps the main thread.
