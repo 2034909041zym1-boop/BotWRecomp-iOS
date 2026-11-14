@@ -1,6 +1,9 @@
 #pragma once
 
 #include <TargetConditionals.h>
+#if !TARGET_OS_SIMULATOR
+#include <MetalFX/MetalFX.hpp>
+#endif
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayerHandle.h"
@@ -499,6 +502,20 @@ private:
 	// Pipelines
 	MTL::RenderPipelineDescriptor* m_copyDepthToColorDesc;
 	std::map<MTL::PixelFormat, MTL::RenderPipelineState*> m_copyDepthToColorPipelines;
+
+#if !TARGET_OS_SIMULATOR
+	// MetalFX Spatial upscaling
+	MTLFX::SpatialScaler* m_spatialScaler = nullptr;
+	MTL::Texture* m_spatialScalerOutput = nullptr;
+	uint32 m_spatialInW = 0;
+	uint32 m_spatialInH = 0;
+	uint32 m_spatialOutW = 0;
+	uint32 m_spatialOutH = 0;
+	MTL::PixelFormat m_spatialInFmt = MTL::PixelFormatInvalid;
+	MTL::PixelFormat m_spatialOutFmt = MTL::PixelFormatInvalid;
+	bool m_spatialScalerChecked = false;
+	bool m_spatialScalerSupported = false;
+#endif
 
 	// Void vertex pipelines
 	class MetalVoidVertexPipeline* m_copyBufferToBufferPipeline;

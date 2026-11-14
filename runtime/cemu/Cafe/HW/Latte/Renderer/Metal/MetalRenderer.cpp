@@ -30,6 +30,7 @@
 extern "C" bool botw_is_background();
 extern "C" void botw_wait_while_background();
 extern "C" void botw_record_gpu_time_us(uint64_t us);
+extern float g_render_scale;
 
 namespace {
 struct ScopedAutoreleasePool
@@ -300,6 +301,19 @@ MetalRenderer::~MetalRenderer()
     for (const auto [pixelFormat, pipeline] : m_copyDepthToColorPipelines)
         pipeline->release();
 
+#if !TARGET_OS_SIMULATOR
+    if (m_spatialScaler)
+    {
+        m_spatialScaler->release();
+        m_spatialScaler = nullptr;
+    }
+    if (m_spatialScalerOutput)
+    {
+        m_spatialScalerOutput->release();
+        m_spatialScalerOutput = nullptr;
+    }
+#endif
+
     delete m_outputShaderCache;
     delete m_pipelineCache;
     delete m_depthStencilCache;
@@ -505,6 +519,83 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 
     // Create render pass
     auto& layer = GetLayer(!padView);
+
+#if !TARGET_OS_SIMULATOR
+    if (!padView && g_render_scale > 0.0f && g_render_scale < 0.99f && imageWidth > 0 && imageHeight > 0)
+    {
+        const uint32 inW = (uint32)presentTexture->width();
+        const uint32 inH = (uint32)presentTexture->height();
+        const uint32 outW = (uint32)imageWidth;
+        const uint32 outH = (uint32)imageHeight;
+        if (inW > 0 && inH > 0 && inW < outW && inH < outH)
+        {
+            if (!m_spatialScalerChecked)
+            {
+                m_spatialScalerChecked = true;
+                m_spatialScalerSupported = MTLFX::SpatialScalerDescriptor::supportsDevice(m_device);
+            }
+            if (m_spatialScalerSupported)
+            {
+                const MTL::PixelFormat inFmt = presentTexture->pixelFormat();
+                const MTL::PixelFormat outFmt = m_state.m_usesSRGB ? MTL::PixelFormatBGRA8Unorm_sRGB : MTL::PixelFormatBGRA8Unorm;
+                if (!m_spatialScaler || m_spatialInW != inW || m_spatialInH != inH || m_spatialOutW != outW || m_spatialOutH != outH || m_spatialInFmt != inFmt || m_spatialOutFmt != outFmt)
+                {
+                    if (m_spatialScaler) { m_spatialScaler->release(); m_spatialScaler = nullptr; }
+                    if (m_spatialScalerOutput) { m_spatialScalerOutput->release(); m_spatialScalerOutput = nullptr; }
+
+                    NS_STACK_SCOPED MTLFX::SpatialScalerDescriptor* desc = MTLFX::SpatialScalerDescriptor::alloc()->init();
+                    desc->setColorTextureFormat(inFmt);
+                    desc->setOutputTextureFormat(outFmt);
+                    desc->setInputWidth(inW);
+                    desc->setInputHeight(inH);
+                    desc->setOutputWidth(outW);
+                    desc->setOutputHeight(outH);
+                    desc->setColorProcessingMode(MTLFX::SpatialScalerColorProcessingModePerceptual);
+                    m_spatialScaler = desc->newSpatialScaler(m_device);
+
+                    if (m_spatialScaler)
+                    {
+                        MTL::TextureDescriptor* texDesc = MTL::TextureDescriptor::texture2DDescriptor(outFmt, outW, outH, false);
+                        texDesc->setStorageMode(MTL::StorageModePrivate);
+                        texDesc->setUsage(m_spatialScaler->outputTextureUsage() | MTL::TextureUsageShaderRead | MTL::TextureUsageRenderTarget);
+                        m_spatialScalerOutput = m_device->newTexture(texDesc);
+                        if (!m_spatialScalerOutput)
+                        {
+                            m_spatialScaler->release();
+                            m_spatialScaler = nullptr;
+                        }
+                    }
+
+                    m_spatialInW = inW;
+                    m_spatialInH = inH;
+                    m_spatialOutW = outW;
+                    m_spatialOutH = outH;
+                    m_spatialInFmt = inFmt;
+                    m_spatialOutFmt = outFmt;
+                }
+
+                if (m_spatialScaler && m_spatialScalerOutput)
+                {
+                    EndEncoding();
+                    m_spatialScaler->setColorTexture(presentTexture);
+                    m_spatialScaler->setOutputTexture(m_spatialScalerOutput);
+                    m_spatialScaler->setInputContentWidth(inW);
+                    m_spatialScaler->setInputContentHeight(inH);
+                    m_spatialScaler->encodeToCommandBuffer(GetCommandBuffer());
+
+                    const bool isUpsideDown = (shader == RendererOutputShader::s_copy_shader_ud ||
+                                               shader == RendererOutputShader::s_bicubic_shader_ud ||
+                                               shader == RendererOutputShader::s_hermit_shader_ud ||
+                                               shader == RendererOutputShader::s_fxaa_shader_ud ||
+                                               shader == RendererOutputShader::s_fxaa_cas_shader_ud);
+                    presentTexture = m_spatialScalerOutput;
+                    shader = isUpsideDown ? RendererOutputShader::s_copy_shader_ud : RendererOutputShader::s_copy_shader;
+                    useLinearTexFilter = false;
+                }
+            }
+        }
+    }
+#endif
 
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
     auto colorAttachment = renderPassDescriptor->colorAttachments()->object(0);
