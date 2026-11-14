@@ -30,6 +30,9 @@
 extern "C" bool botw_is_background();
 extern "C" void botw_wait_while_background();
 extern "C" void botw_record_gpu_time_us(uint64_t us);
+extern "C" void botw_record_gpu_render_pass();
+extern "C" void botw_record_gpu_blit_split();
+extern "C" void botw_record_gpu_cmd_buffer();
 
 namespace {
 struct ScopedAutoreleasePool
@@ -1811,6 +1814,7 @@ MTL::RenderCommandEncoder* MetalRenderer::GetTemporaryRenderCommandEncoder(MTL::
 
     // Debug
     m_performanceMonitor.m_renderPasses++;
+    botw_record_gpu_render_pass();
 
     return renderCommandEncoder;
 }
@@ -1882,6 +1886,7 @@ MTL::RenderCommandEncoder* MetalRenderer::GetRenderCommandEncoder(bool forceRecr
 
     // Debug
     m_performanceMonitor.m_renderPasses++;
+    botw_record_gpu_render_pass();
 
     return renderCommandEncoder;
 }
@@ -1920,6 +1925,8 @@ MTL::BlitCommandEncoder* MetalRenderer::GetBlitCommandEncoder()
             return (MTL::BlitCommandEncoder*)m_commandEncoder;
         }
 
+        if (m_encoderType == MetalEncoderType::Render)
+            botw_record_gpu_blit_split();
         EndEncoding();
     }
 
@@ -1977,6 +1984,7 @@ void MetalRenderer::CommitCommandBuffer()
 
         mtlCommandBuffer->commit();
         m_currentCommandBuffer.m_commited = true;
+        botw_record_gpu_cmd_buffer();
 
         m_executingCommandBuffers.push_back({mtlCommandBuffer, m_eventValue});
 
