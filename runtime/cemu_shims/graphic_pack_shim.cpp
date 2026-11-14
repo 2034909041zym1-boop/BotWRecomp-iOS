@@ -55,8 +55,11 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
                 // (512x96 / 500x94 / 480x32 / 464x28 - runtime.log shows 464x28 rgba8 being
                 // rewritten to 576x28). Widening that strip breaks the glyph layout, so every
                 // TextBox comes out blank while sprite-based HUD numbers still look fine.
-                // Keep such strips, and the pure-R8 atlases, at their authored width.
-                const bool glyphStrip = (r.height <= 96 && r.width >= 400 && r.width <= 512);
+                // Title text uses a larger size, so the strip is taller than the body-text ones
+                // (the quest banner lost its text the same way). Text strips are always strongly
+                // letterboxed and short; screen targets are 16:9 (1.78:1), so the ratio test keeps
+                // them out. Keep those strips and the pure-R8 atlases at their authored width.
+                const bool glyphStrip = (r.height <= 200 && r.width >= 128 && r.width >= r.height * 3);
                 const bool fontAtlas = (r.formats.size() == 1 && r.formats[0] == 0x816);
                 ow = (glyphStrip || fontAtlas) ? r.ow : ((ow + 31) & ~31);
             }
