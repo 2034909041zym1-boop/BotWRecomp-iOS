@@ -501,7 +501,8 @@ private:
 	std::map<MTL::PixelFormat, MTL::RenderPipelineState*> m_copyDepthToColorPipelines;
 
 	// Void vertex pipelines
-	class MetalVoidVertexPipeline* m_copyBufferToBufferPipeline;
+	class MetalVoidVertexPipeline* m_copyBufferToBufferPipeline = nullptr;
+	class MetalVoidVertexPipeline* m_copyBufferToBuffer16Pipeline = nullptr;
 
 	// Synchronization resources
 	MTL::SharedEvent* m_event = nullptr;

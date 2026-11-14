@@ -62,6 +62,40 @@ inline size_t Align(size_t size, size_t alignment)
     return (size + alignment - 1) & ~(alignment - 1);
 }
 
+struct MetalBufferCopyPlan
+{
+    uint32 headBytes = 0;
+    uint32 aligned16Count = 0;
+    uint32 tailBytes = 0;
+    bool useAligned16 = false;
+};
+
+inline MetalBufferCopyPlan BuildMetalBufferCopyPlan(size_t srcOffset, size_t dstOffset, size_t size)
+{
+    MetalBufferCopyPlan plan{};
+    if (size == 0)
+        return plan;
+
+    if (size >= 64 && ((srcOffset & 15) == (dstOffset & 15)))
+    {
+        uint32 phase = static_cast<uint32>(dstOffset & 15);
+        uint32 head = (16u - phase) & 15u;
+        size_t remaining = size - head;
+        uint32 vecCount = static_cast<uint32>(remaining / 16u);
+        if (vecCount >= 4)
+        {
+            plan.headBytes = head;
+            plan.aligned16Count = vecCount;
+            plan.tailBytes = static_cast<uint32>(remaining - static_cast<size_t>(vecCount) * 16u);
+            plan.useAligned16 = true;
+            return plan;
+        }
+    }
+
+    plan.headBytes = static_cast<uint32>(size);
+    return plan;
+}
+
 __attribute__((unused)) static inline void StackAutoRelease(void* object)
 {
     (*(NS::Object**)object)->release();

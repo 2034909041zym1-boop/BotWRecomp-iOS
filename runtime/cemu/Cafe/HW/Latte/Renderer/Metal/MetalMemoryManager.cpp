@@ -100,15 +100,15 @@ void MetalMemoryManager::UploadToBufferCache(const void* data, size_t offset, si
 
     if (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate)
     {
-        auto blitCommandEncoder = m_mtlr->GetBlitCommandEncoder();
+        if (size == 0)
+            return;
 
-        auto allocation = m_stagingAllocator.AllocateBufferMemory(size, 1);
-        memcpy(allocation.memPtr, data, size);
+        const size_t phase = (m_mtlr->IsAppleGPU() && m_mtlr->GetEncoderType() == MetalEncoderType::Render) ? (offset & 15) : 0;
+        auto allocation = m_stagingAllocator.AllocateBufferMemory(size + phase, 16);
+        memcpy(allocation.memPtr + phase, data, size);
         m_stagingAllocator.FlushReservation(allocation);
 
-        blitCommandEncoder->copyFromBuffer(allocation.mtlBuffer, allocation.bufferOffset, m_bufferCache, offset, size);
-
-        //m_mtlr->CopyBufferToBuffer(allocation.mtlBuffer, allocation.bufferOffset, m_bufferCache, offset, size, ALL_MTL_RENDER_STAGES, ALL_MTL_RENDER_STAGES);
+        m_mtlr->CopyBufferToBuffer(allocation.mtlBuffer, allocation.bufferOffset + phase, m_bufferCache, offset, size, ALL_MTL_RENDER_STAGES, ALL_MTL_RENDER_STAGES);
     }
     else
     {

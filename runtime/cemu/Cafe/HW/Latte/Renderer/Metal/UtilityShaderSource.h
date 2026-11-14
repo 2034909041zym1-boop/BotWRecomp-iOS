@@ -30,7 +30,11 @@ vertex VertexOut vertexFullscreen(ushort vid [[vertex_id]]) {
 //    return tex.sample(samplr, in.texCoord);
 //}
 
-vertex void vertexCopyBufferToBuffer(uint vid [[vertex_id]], device uint8_t* src [[buffer(GET_BUFFER_BINDING(0))]], device uint8_t* dst [[buffer(GET_BUFFER_BINDING(1))]]) {
+vertex void vertexCopyBufferToBuffer(uint vid [[vertex_id]], device const uint8_t* src [[buffer(GET_BUFFER_BINDING(0))]], device uint8_t* dst [[buffer(GET_BUFFER_BINDING(1))]]) {
+    dst[vid] = src[vid];
+}
+
+vertex void vertexCopyBufferToBuffer16(uint vid [[vertex_id]], device const uint4* src [[buffer(GET_BUFFER_BINDING(0))]], device uint4* dst [[buffer(GET_BUFFER_BINDING(1))]]) {
     dst[vid] = src[vid];
 }
 

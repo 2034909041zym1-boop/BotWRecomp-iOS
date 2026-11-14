@@ -282,9 +282,13 @@ MetalRenderer::MetalRenderer() : Renderer(RendererAPI::Metal)
     // Void vertex pipelines
 #if TARGET_OS_SIMULATOR  // iOS port: the simulator rejects attachment-less pipelines (unused, see CopyBufferToBuffer)
     m_copyBufferToBufferPipeline = nullptr;
+    m_copyBufferToBuffer16Pipeline = nullptr;
 #else
     if (m_isAppleGPU)
+    {
         m_copyBufferToBufferPipeline = new MetalVoidVertexPipeline(this, utilityLibrary, "vertexCopyBufferToBuffer");
+        m_copyBufferToBuffer16Pipeline = new MetalVoidVertexPipeline(this, utilityLibrary, "vertexCopyBufferToBuffer16");
+    }
 #endif
 
     // HACK: for some reason, this variable ends up being initialized to some garbage data, even though its declared as bool m_captureFrame = false;
@@ -295,7 +299,10 @@ MetalRenderer::MetalRenderer() : Renderer(RendererAPI::Metal)
 MetalRenderer::~MetalRenderer()
 {
     if (m_isAppleGPU)
+    {
         delete m_copyBufferToBufferPipeline;
+        delete m_copyBufferToBuffer16Pipeline;
+    }
     //delete m_copyTextureToTexturePipeline;
     //delete m_restrideBufferPipeline;
 
@@ -2360,34 +2367,64 @@ void MetalRenderer::ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 s
 
 void MetalRenderer::CopyBufferToBuffer(MTL::Buffer* src, uint32 srcOffset, MTL::Buffer* dst, uint32 dstOffset, uint32 size, MTL::RenderStages after, MTL::RenderStages before)
 {
-    // TODO: uncomment and fix performance issues
-    // Do the copy in a vertex shader on Apple GPUs
-    /*
-    if (m_isAppleGPU && m_encoderType == MetalEncoderType::Render)
+    if (size == 0)
+        return;
+
+    constexpr uint32 MAX_INPASS_COPY_SIZE = 256u * 1024u;
+    if (m_isAppleGPU && m_encoderType == MetalEncoderType::Render &&
+        m_copyBufferToBufferPipeline && m_copyBufferToBufferPipeline->GetRenderPipelineState() &&
+        m_copyBufferToBuffer16Pipeline && m_copyBufferToBuffer16Pipeline->GetRenderPipelineState() &&
+        size <= MAX_INPASS_COPY_SIZE)
     {
         auto renderCommandEncoder = static_cast<MTL::RenderCommandEncoder*>(m_commandEncoder);
 
-        MTL::Resource* barrierBuffers[] = {src};
-        renderCommandEncoder->memoryBarrier(barrierBuffers, 1, after, after | MTL::RenderStageVertex);
+        // Wait for any prior render stages reading/writing src or dst (including earlier draws in this pass)
+        // before the vertex copy shader writes to dst.
+        MTL::Resource* preBarriers[2] = { src, dst };
+        uint32 preCount = (src == dst) ? 1u : 2u;
+        renderCommandEncoder->memoryBarrier(preBarriers, preCount, after | ALL_MTL_RENDER_STAGES, MTL::RenderStageVertex);
 
-		renderCommandEncoder->setRenderPipelineState(m_copyBufferToBufferPipeline->GetRenderPipelineState());
-		m_state.m_encoderState.m_renderPipelineState = m_copyBufferToBufferPipeline->GetRenderPipelineState();
+        auto emitCopy = [&](MetalVoidVertexPipeline* pipe, uint32 sOff, uint32 dOff, uint32 count) {
+            MTL::RenderPipelineState* pso = pipe->GetRenderPipelineState();
+            if (m_state.m_encoderState.m_renderPipelineState != pso)
+            {
+                renderCommandEncoder->setRenderPipelineState(pso);
+                m_state.m_encoderState.m_renderPipelineState = pso;
+            }
+            SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_VERTEX, src, sOff, GET_HELPER_BUFFER_BINDING(0));
+            SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_VERTEX, dst, dOff, GET_HELPER_BUFFER_BINDING(1));
+            renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypePoint, NS::UInteger(0), NS::UInteger(count));
+        };
 
-		SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_VERTEX, src, srcOffset, GET_HELPER_BUFFER_BINDING(0));
-		SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_VERTEX, dst, dstOffset, GET_HELPER_BUFFER_BINDING(1));
+        const MetalBufferCopyPlan plan = BuildMetalBufferCopyPlan(srcOffset, dstOffset, size);
+        uint32 curSrc = srcOffset;
+        uint32 curDst = dstOffset;
+        if (plan.headBytes > 0)
+        {
+            emitCopy(m_copyBufferToBufferPipeline, curSrc, curDst, plan.headBytes);
+            curSrc += plan.headBytes;
+            curDst += plan.headBytes;
+        }
+        if (plan.aligned16Count > 0)
+        {
+            emitCopy(m_copyBufferToBuffer16Pipeline, curSrc, curDst, plan.aligned16Count);
+            const uint32 alignedBytes = plan.aligned16Count * 16u;
+            curSrc += alignedBytes;
+            curDst += alignedBytes;
+        }
+        if (plan.tailBytes > 0)
+        {
+            emitCopy(m_copyBufferToBufferPipeline, curSrc, curDst, plan.tailBytes);
+        }
 
-		renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypePoint, NS::UInteger(0), NS::UInteger(size));
-
-		barrierBuffers[0] = dst;
-        renderCommandEncoder->memoryBarrier(barrierBuffers, 1, before | MTL::RenderStageVertex, before);
+        // Ensure dst writes from the copy vertex shader are visible to all requested consumer stages.
+        MTL::Resource* postBarriers[1] = { dst };
+        renderCommandEncoder->memoryBarrier(postBarriers, 1, MTL::RenderStageVertex, before);
+        return;
     }
-    else
-    {
-    */
-        auto blitCommandEncoder = GetBlitCommandEncoder();
 
-        blitCommandEncoder->copyFromBuffer(src, srcOffset, dst, dstOffset, size);
-    //}
+    auto blitCommandEncoder = GetBlitCommandEncoder();
+    blitCommandEncoder->copyFromBuffer(src, srcOffset, dst, dstOffset, size);
 }
 
 void MetalRenderer::SwapBuffer(bool mainWindow)
