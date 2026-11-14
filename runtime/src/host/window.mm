@@ -12,6 +12,8 @@
 #if TARGET_OS_IOS
 extern "C" void swkbd_ui_precreate();  // host/soft_keyboard.mm
 extern "C" int swkbd_ui_active();
+extern "C" void swkbd_ui_append(const char* text);
+extern "C" void swkbd_ui_confirm();
 #endif
 
 #include <atomic>
@@ -540,6 +542,13 @@ void run() {
                 bool fs = SDL_GetWindowFlags(g_win) & SDL_WINDOW_FULLSCREEN;
                 SDL_SetWindowFullscreen(g_win, !fs);
             }
+#if TARGET_OS_IOS
+            else if (e.type == SDL_EVENT_TEXT_INPUT) {
+                swkbd_ui_append(e.text.text);
+            } else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_RETURN && swkbd_ui_active()) {
+                swkbd_ui_confirm();
+            }
+#endif
         }
         apply_input();
         // Freeze watchdog: no game frame for 8 s while in the foreground -> log every thread (once a minute)
