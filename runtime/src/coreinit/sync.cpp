@@ -20,27 +20,47 @@ std::condition_variable& cv(uint32_t obj) {
 }
 
 // ---- recursive mutexes (OSMutex and OSFastMutex share the implementation) ----------------
+// Sharded away from g_klock so uncontended/unrelated guest mutexes (e.g. Havok) do not serialize
+// all threads on one global lock, and only signal the condition variable when waiters > 0.
 struct MutexState {
     GuestThread* owner = nullptr;
     int count = 0;
+    int waiters = 0;
+    std::condition_variable* cv = nullptr;
 };
-std::unordered_map<uint32_t, MutexState> g_mutexes;
+struct MutexBucket {
+    std::mutex lock;
+    std::unordered_map<uint32_t, MutexState> map;
+};
+constexpr size_t kMutexBuckets = 64;
+MutexBucket g_mutex_buckets[kMutexBuckets];
+
+inline MutexBucket& mutex_bucket(uint32_t m) { return g_mutex_buckets[(m >> 4) & (kMutexBuckets - 1)]; }
 
 void mutex_lock(uint32_t m) {
     GuestThread* me = threads::current();
-    std::unique_lock<std::mutex> l(g_klock);
-    MutexState& s = g_mutexes[m];
+    MutexBucket& b = mutex_bucket(m);
+    std::unique_lock<std::mutex> l(b.lock);
+    MutexState& s = b.map[m];
     if (s.owner != me && s.owner) {
         threads::WaitMark w("mutex", m);
-        cv(m).wait(l, [&] { return s.owner == nullptr; });
+        if (!s.cv) s.cv = new std::condition_variable;
+        std::condition_variable* cond = s.cv;
+        s.waiters++;
+        cond->wait(l, [&] { return b.map[m].owner == nullptr; });
+        b.map[m].waiters--;
+        b.map[m].owner = me;
+        b.map[m].count++;
+        return;
     }
     s.owner = me;
     s.count++;
 }
 bool mutex_trylock(uint32_t m) {
     GuestThread* me = threads::current();
-    std::lock_guard<std::mutex> l(g_klock);
-    MutexState& s = g_mutexes[m];
+    MutexBucket& b = mutex_bucket(m);
+    std::lock_guard<std::mutex> l(b.lock);
+    MutexState& s = b.map[m];
     if (s.owner && s.owner != me) return false;
     s.owner = me;
     s.count++;
@@ -48,20 +68,24 @@ bool mutex_trylock(uint32_t m) {
 }
 void mutex_unlock(uint32_t m) {
     GuestThread* me = threads::current();
-    std::lock_guard<std::mutex> l(g_klock);
-    MutexState& s = g_mutexes[m];
+    MutexBucket& b = mutex_bucket(m);
+    std::lock_guard<std::mutex> l(b.lock);
+    MutexState& s = b.map[m];
     if (s.owner != me) {
         LOG("mutex %08x unlocked by a non-owner (%s)", m, me ? me->name.c_str() : "?");
         return;
     }
     if (--s.count == 0) {
         s.owner = nullptr;
-        cv(m).notify_one();
+        if (s.waiters > 0 && s.cv) s.cv->notify_one();
     }
 }
 void mutex_init(uint32_t m) {
-    std::lock_guard<std::mutex> l(g_klock);
-    g_mutexes[m] = MutexState{};
+    MutexBucket& b = mutex_bucket(m);
+    std::lock_guard<std::mutex> l(b.lock);
+    auto& s = b.map[m];
+    s.owner = nullptr;
+    s.count = 0;
 }
 }  // namespace
 
