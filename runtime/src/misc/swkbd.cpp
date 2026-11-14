@@ -227,6 +227,15 @@ HLE_EXPORT(swkbd, SwkbdAppearInputForm__3RplFRCQ3_2nn5swkbd9AppearArg) {
     RET(1);
 }
 HLE_EXPORT(swkbd, SwkbdAppearKeyboard__3RplFRCQ3_2nn5swkbd11KeyboardArg) {
+    // BotW opens the keyboard through AppearKeyboard, not SetReceiver, so the receiver lives inside
+    // SwkbdKeyboardArg_t at +0xA8 (nn_swkbd.h: receiverArg follows ukn0A0/ukn0A4).
+    const uint32_t arg = ARG(0);
+    g_recvReceiver = arg ? mem::r32(arg + 0xA8) : 0;
+    g_recvStringBuf = arg ? mem::r32(arg + 0xAC) : 0;
+    g_recvStringBufSize = arg ? mem::r32(arg + 0xB0) : 0;
+    if (g_recvStringBufSize > 1 && g_recvStringBufSize <= kMaxChars) g_maxLen = g_recvStringBufSize - 1;
+    LOG("[swkbd] appearKeyboard arg=%08x recv=%08x buf=%08x size=%u", arg, g_recvReceiver, g_recvStringBuf,
+        g_recvStringBufSize);
     g_decide = false;
     ensure_string_buffer();
     g_formLen = 0;
