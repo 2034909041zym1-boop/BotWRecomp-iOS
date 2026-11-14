@@ -10,10 +10,9 @@
 #include <SDL3/SDL.h>
 
 #if TARGET_OS_IOS
-extern "C" void swkbd_ui_precreate();  // host/soft_keyboard.mm
+extern "C" void swkbd_ui_precreate();  // cemu_shims/soft_keyboard.cpp
 extern "C" int swkbd_ui_active();
-extern "C" void swkbd_ui_append(const char* text);
-extern "C" void swkbd_ui_confirm();
+extern "C" void swkbd_ui_input(uint32_t buttons, float lx, float ly);
 #endif
 
 #include <atomic>
@@ -302,6 +301,14 @@ void apply_input() {
             last_y = dy, last_x = dx;
         }
     }
+    // The on-screen keyboard owns the controls while it is up, so the game does not also react to
+    // the d-pad / A / B presses used to pick letters.
+#if TARGET_OS_IOS
+    if (swkbd_ui_active()) {
+        swkbd_ui_input(s.buttons, s.lx, s.ly);
+        s = input::PadState{};
+    }
+#endif
     // scripted input
     {
         std::lock_guard<std::mutex> l(g_script_lock);
@@ -407,20 +414,9 @@ void on_frame(uint64_t f) {
     g_frame = f;
     if (g_trace_to) g_trace_hle = f >= g_trace_from && f < g_trace_to;
 #if TARGET_OS_IOS
-    // Run the main run loop briefly so main-queue blocks, UIKit events and CoreAnimation commits are
-    // serviced; the emulator keeps the thread busy and nothing else would run them. While the
-    // keyboard is up, wait long enough for asynchronously delivered touch events to arrive.
-    if (swkbd_ui_active()) {
-        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.004, false);
-    } else {
-        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
-    }
-    // Build the swkbd text field once the surface has a real size.
-    static bool keyboard_built = false;
-    if (!keyboard_built && f >= 2) {
-        keyboard_built = true;
-        swkbd_ui_precreate();
-    }
+    // Run the main run loop briefly so main-queue blocks and CoreAnimation commits are serviced; the
+    // emulator keeps the thread busy and nothing else would run them.
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
 #endif
 }
 SDL_Window* g_win_ptr() { return g_win; }
@@ -542,13 +538,6 @@ void run() {
                 bool fs = SDL_GetWindowFlags(g_win) & SDL_WINDOW_FULLSCREEN;
                 SDL_SetWindowFullscreen(g_win, !fs);
             }
-#if TARGET_OS_IOS
-            else if (e.type == SDL_EVENT_TEXT_INPUT) {
-                swkbd_ui_append(e.text.text);
-            } else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_RETURN && swkbd_ui_active()) {
-                swkbd_ui_confirm();
-            }
-#endif
         }
         apply_input();
         // Freeze watchdog: no game frame for 8 s while in the foreground -> log every thread (once a minute)

@@ -9,6 +9,7 @@
 #include <pthread.h>
 
 #include "../src/host/menu.h"
+#include "../src/host/soft_keyboard.h"
 #include "../src/host/touch.h"
 #include "../src/host/touch_draw.h"
 #include "../src/os.h"
@@ -65,6 +66,7 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
 
 void LatteOverlay_render(bool padView) {
     if (padView) return;
+    swkbd_ui_render();  // on-screen keyboard for nn_swkbd, above the game image
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     const float ui = std::max(1.0f, io.DisplaySize.y / 540.0f);
