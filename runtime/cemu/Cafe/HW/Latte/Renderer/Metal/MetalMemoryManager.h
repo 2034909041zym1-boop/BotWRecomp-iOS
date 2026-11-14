@@ -39,6 +39,10 @@ public:
     void InitBufferCache(size_t size);
     void UploadToBufferCache(const void* data, size_t offset, size_t size);
     void CopyBufferCache(size_t srcOffset, size_t dstOffset, size_t size);
+    void FlushPendingBufferUploads();
+    bool HasPendingBufferUploads() const { return !m_pendingBufferUploads.empty(); }
+    bool HasUnsafePendingOverlap(size_t offset) const;
+    void ResolveBufferCacheBinding(size_t offset, MTL::Buffer*& outBuffer, size_t& outOffset) const;
 
     // Getters
     bool UseHostMemoryForCache() const
@@ -73,4 +77,13 @@ private:
     MetalBufferCacheMode m_metalBufferCacheMode;
     MPTR m_importedMemBaseAddress;
     size_t m_hostAllocationSize = 0;
+
+    struct PendingBufferUpload
+    {
+        MTL::Buffer* srcBuffer;
+        size_t srcOffset;
+        size_t dstOffset;
+        size_t size;
+    };
+    std::vector<PendingBufferUpload> m_pendingBufferUploads;
 };

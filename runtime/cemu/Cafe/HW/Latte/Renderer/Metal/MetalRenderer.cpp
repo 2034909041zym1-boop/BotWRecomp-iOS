@@ -1251,6 +1251,43 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     	LatteBufferCache_Sync(indexMax + baseVertex, baseInstance, instanceCount, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, stageUniformModifiedMask);
 	}
 
+	if (m_memoryManager->HasPendingBufferUploads())
+	{
+		bool needFlush = false;
+		for (uint8 i = 0; i < MAX_MTL_VERTEX_BUFFERS; i++)
+		{
+			size_t off = m_state.m_vertexBufferOffsets[i];
+			if (off != INVALID_OFFSET && m_memoryManager->HasUnsafePendingOverlap(off))
+			{
+				needFlush = true;
+				break;
+			}
+		}
+		auto checkStageUniforms = [&](LatteDecompilerShader* s) {
+			if (needFlush || !s)
+				return;
+			uint32 st = GetMtlGeneralShaderType(s->shaderType);
+			for (sint32 i = 0; i < LATTE_NUM_MAX_UNIFORM_BUFFERS; i++)
+			{
+				if (s->resourceMapping.uniformBuffersBindingPoint[i] >= 0)
+				{
+					size_t off = m_state.m_uniformBufferOffsets[st][i];
+					if (off != INVALID_OFFSET && m_memoryManager->HasUnsafePendingOverlap(off))
+					{
+						needFlush = true;
+						break;
+					}
+				}
+			}
+		};
+		checkStageUniforms(vertexShader);
+		if (usesGeometryShader)
+			checkStageUniforms(geometryShader);
+		checkStageUniforms(pixelShader);
+		if (needFlush)
+			m_memoryManager->FlushPendingBufferUploads();
+	}
+
 	// Render pass
 	auto renderCommandEncoder = GetRenderCommandEncoder();
 
@@ -1454,7 +1491,11 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         if (offset != INVALID_OFFSET)
         {
             // Bind
-            SetBuffer(renderCommandEncoder, GetMtlShaderType(vertexShader->shaderType, usesGeometryShader), m_memoryManager->GetBufferCache(), offset, GET_MTL_VERTEX_BUFFER_INDEX(i));
+            MTL::Buffer* vtxBuf = m_memoryManager->GetBufferCache();
+            size_t vtxOff = offset;
+            if (m_memoryManager->HasPendingBufferUploads())
+                m_memoryManager->ResolveBufferCacheBinding(offset, vtxBuf, vtxOff);
+            SetBuffer(renderCommandEncoder, GetMtlShaderType(vertexShader->shaderType, usesGeometryShader), vtxBuf, vtxOff, GET_MTL_VERTEX_BUFFER_INDEX(i));
         }
     }
 
@@ -1928,6 +1969,11 @@ MTL::BlitCommandEncoder* MetalRenderer::GetBlitCommandEncoder()
         if (m_encoderType == MetalEncoderType::Render)
             botw_record_gpu_blit_split();
         EndEncoding();
+
+        if (m_commandEncoder && m_encoderType == MetalEncoderType::Blit)
+        {
+            return (MTL::BlitCommandEncoder*)m_commandEncoder;
+        }
     }
 
     auto commandBuffer = GetCommandBuffer();
@@ -1952,6 +1998,18 @@ void MetalRenderer::EndEncoding()
         m_commandEncoder = nullptr;
         m_encoderType = MetalEncoderType::None;
 
+        if (m_memoryManager->HasPendingBufferUploads())
+        {
+            m_memoryManager->FlushPendingBufferUploads();
+            if (m_commandEncoder)
+            {
+                m_commandEncoder->endEncoding();
+                m_commandEncoder->release();
+                m_commandEncoder = nullptr;
+                m_encoderType = MetalEncoderType::None;
+            }
+        }
+
         // Commit the command buffer if enough draw calls have been recorded
         if (m_recordedDrawcalls >= m_commitTreshold)
             CommitCommandBuffer();
@@ -1964,6 +2022,11 @@ void MetalRenderer::CommitCommandBuffer()
         return;
 
     EndEncoding();
+    if (m_memoryManager->HasPendingBufferUploads())
+    {
+        m_memoryManager->FlushPendingBufferUploads();
+        EndEncoding();
+    }
 
     // Commit the command buffer
     if (!m_currentCommandBuffer.m_commited)
@@ -2329,7 +2392,11 @@ void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
     		if (offset == INVALID_OFFSET)
                 continue;
 
-            SetBuffer(renderCommandEncoder, mtlShaderType, m_memoryManager->GetBufferCache(), offset, binding);
+            MTL::Buffer* ubuf = m_memoryManager->GetBufferCache();
+            size_t uoff = offset;
+            if (m_memoryManager->HasPendingBufferUploads())
+                m_memoryManager->ResolveBufferCacheBinding(offset, ubuf, uoff);
+            SetBuffer(renderCommandEncoder, mtlShaderType, ubuf, uoff, binding);
 		}
 	}
 
