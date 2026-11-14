@@ -21,7 +21,7 @@ const float kScales[] = {0, 0.5f, 0.75f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the d
 const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (裁剪)", "宽屏 hor+ (重启后生效)"};
 const char* kFilters[] = {"双线性 (Bilinear)", "双三次 (Bicubic)", "埃尔米特 (Hermite)", "邻近采样 (Nearest)"};
 const char* kAAModes[] = {"关闭 (原生)", "FXAA 抗锯齿", "FXAA + CAS 锐化"};
-const char* kShowFpsModes[] = {"关闭", "一档: 仅帧率", "二档: 帧率 + 温控"};
+const char* kShowFpsModes[] = {"关闭", "一档: 仅帧率", "二档: 帧率 + GPU状态"};
 
 std::string scale_text(float s) {
     char b[64];

@@ -24,6 +24,8 @@ std::string main_wait_report();
 namespace {
 std::atomic<float> g_fps{0};
 std::atomic<int> g_draws{0};
+std::atomic<float> g_gpu_ms_f{0};
+std::atomic<float> g_us_per_draw{0};
 }  // namespace
 
 // Cemu's GPU thread (LatteThread), for the host loop's slow-frame sampler (window.mm).
@@ -44,6 +46,8 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
         gpu_ms_f = ((double)gpu_us / 1000.0) / (fps * dt_s);
         if (drawcalls > 0) us_per_draw = (gpu_ms_f * 1000.0) / (double)drawcalls;
     }
+    g_gpu_ms_f.store((float)gpu_ms_f, std::memory_order_relaxed);
+    g_us_per_draw.store((float)us_per_draw, std::memory_order_relaxed);
     if (!g_boot_world_ready.load(std::memory_order_relaxed)) {
         static int s_world_ticks = 0;
         // Title/loading screens stay <= ~150 draws/frame; 3D overworld/shrines sustain >= 600.
@@ -103,29 +107,26 @@ void LatteOverlay_render(bool padView) {
             ImGui::SetWindowFontScale(font_scale * 0.90f);
             ImGui::Text("%.0f FPS  ·  %d Draws", (double)g_fps, (int)g_draws);
             if (show_mode >= 2) {
-                const int st_val = botw_thermal_state();
-                const char* th_label = "温控:未知";
-                ImVec4 th_col(0.75f, 0.78f, 0.82f, 1.0f);
-                switch (st_val) {
-                case 0:
-                    th_label = "温控:正常";
-                    th_col = ImVec4(0.45f, 0.92f, 0.55f, 1.0f);
-                    break;
-                case 1:
-                    th_label = "温控:轻度";
-                    th_col = ImVec4(0.98f, 0.85f, 0.35f, 1.0f);
-                    break;
-                case 2:
-                    th_label = "温控:严重";
-                    th_col = ImVec4(1.00f, 0.52f, 0.22f, 1.0f);
-                    break;
-                case 3:
-                    th_label = "温控:过热";
-                    th_col = ImVec4(1.00f, 0.28f, 0.28f, 1.0f);
-                    break;
+                const float gpu_ms = g_gpu_ms_f.load(std::memory_order_relaxed);
+                const float us_d = g_us_per_draw.load(std::memory_order_relaxed);
+                const int draws = g_draws.load(std::memory_order_relaxed);
+                const char* gpu_state = "";
+                ImVec4 gpu_col(0.75f, 0.78f, 0.82f, 1.0f);
+                if (draws >= 2500 && us_d > 0.0f) {
+                    if (us_d <= 3.85f) {
+                        gpu_state = "(满速)";
+                        gpu_col = ImVec4(0.45f, 0.92f, 0.55f, 1.0f);
+                    } else if (us_d <= 4.65f) {
+                        gpu_state = "(轻度降频)";
+                        gpu_col = ImVec4(0.98f, 0.85f, 0.35f, 1.0f);
+                    } else {
+                        gpu_state = "(降频)";
+                        gpu_col = ImVec4(1.00f, 0.35f, 0.25f, 1.0f);
+                    }
                 }
                 ImGui::SameLine(0, 8.0f * ui);
-                ImGui::TextColored(th_col, "%s%s", th_label, botw_low_power_mode() ? " [省电]" : "");
+                ImGui::TextColored(gpu_col, "GPU:%.1fms%s%s", (double)gpu_ms, gpu_state,
+                                   botw_low_power_mode() ? " [省电]" : "");
             }
         }
         ImGui::End();
