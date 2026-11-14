@@ -51,15 +51,16 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             // GX2 textures expect a 32-pixel pitch alignment; 1280 * 1.2229 = 1565 is not aligned.
             int ow = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
             if (g_aspect_extra > 1.0f) {
-                // A single line of blyt text is rendered into a narrow strip of its own
-                // (512x96 / 500x94 / 480x32 / 464x28 - runtime.log shows 464x28 rgba8 being
-                // rewritten to 576x28). Widening that strip breaks the glyph layout, so every
-                // TextBox comes out blank while sprite-based HUD numbers still look fine.
-                // Title text uses a larger size, so the strip is taller than the body-text ones
-                // (the quest banner lost its text the same way). Text strips are always strongly
-                // letterboxed and short; screen targets are 16:9 (1.78:1), so the ratio test keeps
-                // them out. Keep those strips and the pure-R8 atlases at their authored width.
-                const bool glyphStrip = (r.height <= 200 && r.width >= 128 && r.width >= r.height * 3);
+                // A single line of blyt text is rendered into its own RGBA8 (0x01a) + tiled
+                // (0x004) strip, from the 293x185 title banner down to 464x28 body text
+                // (runtime.log shows 464x28 being rewritten to 576x28). Widening the strip breaks
+                // the glyph layout, so every TextBox comes out blank while sprite-based HUD
+                // numbers still look fine. The title strip (293x185) is near-square and fails any
+                // "strongly letterboxed" ratio test, so key on format+tilemode instead of size:
+                // that catches all five strips without touching the 16:9 screen targets.
+                const bool glyphStrip =
+                    (r.formats.size() == 1 && r.formats[0] == 0x01a &&
+                     r.tilemodes.size() == 1 && r.tilemodes[0] == 0x004);
                 const bool fontAtlas = (r.formats.size() == 1 && r.formats[0] == 0x816);
                 ow = (glyphStrip || fontAtlas) ? r.ow : ((ow + 31) & ~31);
             }
