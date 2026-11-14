@@ -4,7 +4,8 @@
 //
 // State handling mirrors Cemu (src/Cafe/OS/libs/swkbd/swkbd.cpp): the form reports DISPLAYED while
 // active and BLANK once the game closes it, and SwkbdCalc is a no-op. The keys are drawn by
-// host/soft_keyboard.mm as an overlay on the game surface, since BotW only draws the answer text.
+// host/soft_keyboard.h + cemu_shims/soft_keyboard.cpp as an overlay on the game surface, since BotW
+// only draws the answer text.
 #include <TargetConditionals.h>
 
 #include "../hle.h"
@@ -134,8 +135,35 @@ void set_text_from_guest(uint32_t src) {
 }
 
 // Pull the text the player typed on the host keyboard and treat accept/cancel as "decided" so the
+// ---- IEventReceiver notification -------------------------------------------------------------------
+// BotW never calls SwkbdGetInputFormString; Cemu refreshes the game's own answer field by copying the
+// form into the application's string buffer and invoking IEventReceiver::changeString (see
+// swkbd_inputStringChanged in nn_swkbd.cpp). Without that callback the answer box stays empty.
+uint32_t g_recvReceiver = 0;   // nn::swkbd::IEventReceiver*
+uint32_t g_recvStringBuf = 0;  // the application's uint16 buffer
+uint32_t g_recvStringBufSize = 0;
+uint32_t g_changeParam = 0;  // {uint32 beginIndex, uint32 endIndex}
+uint32_t g_lastNotifiedLen = 0xFFFFFFFF;
+
+void notify_string_changed(PPCContext* c) {
+    if (g_recvStringBuf && g_recvStringBufSize > 1) {
+        const uint32_t n = g_formLen < g_recvStringBufSize - 1 ? g_formLen : g_recvStringBufSize - 1;
+        for (uint32_t i = 0; i < n; i++) mem::w16(g_recvStringBuf + i * 2, g_form[i]);
+        mem::w16(g_recvStringBuf + n * 2, 0);
+    }
+    if (!g_recvReceiver) return;
+    const uint32_t vtable = mem::r32(g_recvReceiver);
+    if (!vtable) return;
+    const uint32_t fn = mem::r32(vtable + 0x0C);  // SwkbdIEventReceiverVTable_t::changeString
+    if (!fn) return;
+    if (!g_changeParam) g_changeParam = mem::sys_alloc(8, 4);
+    mem::w32(g_changeParam, 0);      // beginIndex
+    mem::w32(g_changeParam + 4, 0);  // endIndex
+    guest_call(c, fn, {g_recvReceiver, g_changeParam});
+}
+
 // game always moves on.
-void poll_host_keyboard() {
+void poll_host_keyboard(PPCContext* c) {
     if (!kHasHostKeyboard || !g_active) return;
     swkbd_ui_pump();
 
@@ -143,7 +171,7 @@ void poll_host_keyboard() {
     // form text itself, so syncing only on accept left its answer box empty while typing.
     char buf[512];
     swkbd_ui_text(buf, (int)sizeof(buf));
-    g_formLen = utf8_to_utf16(buf, g_form, g_maxLen);
+    g_formLen = buf[0] ? utf8_to_utf16(buf, g_form, g_maxLen) : 0;
 
     const int r = swkbd_ui_poll();
     if (r == 1 || r == 2) {
@@ -152,6 +180,11 @@ void poll_host_keyboard() {
             g_formLen = 5;
         }
         g_decide = true;
+    }
+    if (g_formLen != g_lastNotifiedLen) {
+        g_lastNotifiedLen = g_formLen;
+        LOG("[swkbd] changed len=%u", g_formLen);
+        notify_string_changed(c);
     }
 }
 
@@ -190,6 +223,7 @@ HLE_EXPORT(swkbd, SwkbdAppearInputForm__3RplFRCQ3_2nn5swkbd9AppearArg) {
     utf16_to_utf8(g_form, g_formLen, initial, sizeof(initial));
     g_active = true;
     swkbd_ui_show(initial, (int)(g_maxLen > 20 ? 20 : g_maxLen));
+    g_lastNotifiedLen = 0xFFFFFFFF;  // force the first notification for this session
     RET(1);
 }
 HLE_EXPORT(swkbd, SwkbdAppearKeyboard__3RplFRCQ3_2nn5swkbd11KeyboardArg) {
@@ -199,6 +233,7 @@ HLE_EXPORT(swkbd, SwkbdAppearKeyboard__3RplFRCQ3_2nn5swkbd11KeyboardArg) {
     g_form[0] = 0;
     g_active = true;
     swkbd_ui_show("", (int)(g_maxLen > 20 ? 20 : g_maxLen));
+    g_lastNotifiedLen = 0xFFFFFFFF;
     RET(1);
 }
 HLE_EXPORT(swkbd, SwkbdDisappearInputForm__3RplFv) {
@@ -213,13 +248,13 @@ HLE_EXPORT(swkbd, SwkbdDisappearKeyboard__3RplFv) {
 }
 
 // ---- state / result --------------------------------------------------------------------------------
-HLE_EXPORT(swkbd, SwkbdCalc__3RplFRCQ3_2nn5swkbd14ControllerInfo) { poll_host_keyboard(); }
+HLE_EXPORT(swkbd, SwkbdCalc__3RplFRCQ3_2nn5swkbd14ControllerInfo) { poll_host_keyboard(c); }
 HLE_EXPORT(swkbd, SwkbdGetStateInputForm__3RplFv) {
-    poll_host_keyboard();
+    poll_host_keyboard(c);
     RET(g_active ? kStateDisplayed : kStateBlank);
 }
 HLE_EXPORT(swkbd, SwkbdGetStateKeyboard__3RplFv) {
-    poll_host_keyboard();
+    poll_host_keyboard(c);
     RET(g_active ? kStateDisplayed : kStateBlank);
 }
 HLE_EXPORT(swkbd, SwkbdGetInputFormString__3RplFv) {
@@ -277,7 +312,14 @@ HLE_EXPORT(swkbd, SwkbdMuteAllSound__3RplFb) {}
 HLE_EXPORT(swkbd, SwkbdSetControllerRemo__3RplFQ3_2nn5swkbd14ControllerType) {}
 HLE_EXPORT(swkbd, SwkbdSetCursorPos__3RplFi) {}
 HLE_EXPORT(swkbd, SwkbdSetEnableOkButton__3RplFb) {}
-HLE_EXPORT(swkbd, SwkbdSetReceiver__3RplFRCQ3_2nn5swkbd11ReceiverArg) {}
+HLE_EXPORT(swkbd, SwkbdSetReceiver__3RplFRCQ3_2nn5swkbd11ReceiverArg) {
+    // receiverArg layout (nn_swkbd.h): IEventReceiver, stringBuf, stringBufSize, ...
+    const uint32_t a = ARG(0);
+    g_recvReceiver = mem::r32(a + 0x00);
+    g_recvStringBuf = mem::r32(a + 0x04);
+    g_recvStringBufSize = mem::r32(a + 0x08);
+    LOG("[swkbd] receiver=%08x buf=%08x size=%u", g_recvReceiver, g_recvStringBuf, g_recvStringBufSize);
+}
 HLE_EXPORT(swkbd, SwkbdSetSelectFrom__3RplFi) {}
 HLE_EXPORT(swkbd, SwkbdSetUserControllerEventObj__3RplFPQ3_2nn5swkbd19IControllerEventObj) {}
 HLE_EXPORT(swkbd, SwkbdSetUserSoundObj__3RplFPQ3_2nn5swkbd9ISoundObj) {}
