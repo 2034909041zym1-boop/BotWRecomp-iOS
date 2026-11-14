@@ -28,11 +28,10 @@ uint16_t g_next_id = 1;
 constexpr size_t kHostStack = 64u << 20;  // guest recursion maps onto the host stack
 
 void apply_host_thread_attrs(const std::string& name, bool is_main) {
-    (void)is_main;
-    // Keep active guest worker/physics threads at USER_INTERACTIVE as well: the main thread spends
-    // most of its time waiting on worker/Havok threads, which otherwise get relegated to E-cores
-    // under T1(Fair) thermal throttling.
-    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    // The game's main thread and the light timing threads (audio, alarms, GX2 callbacks) get the highest QoS so
+    // the scheduler keeps them on performance cores (a phone has two); worker threads one step below.
+    const bool critical = is_main || name == "AX" || name == "alarms" || name == "GX2 callbacks";
+    pthread_set_qos_class_self_np(critical ? QOS_CLASS_USER_INTERACTIVE : QOS_CLASS_USER_INITIATED, 0);
     pthread_setname_np(name.empty() ? "guest" : name.c_str());
 }
 
