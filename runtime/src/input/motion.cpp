@@ -139,9 +139,10 @@ void motion_sensor(bool gyro, const float data[3], uint64_t ts) {
     }
 }
 
-void motion_reset() {
+void motion_reset(bool flat) {
     std::lock_guard<std::mutex> l(g_lock);
     g_imu = Mahony{};
+    if (flat) g_imu.q = {1, 0, 0, 0};  // neutral flat GamePad pose (no initial slew)
     g_valid = g_has_acc = g_has_gyro = false;
     g_ts_acc = g_ts_gyro = g_ts_integrate = 0;
 }

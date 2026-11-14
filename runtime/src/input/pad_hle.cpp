@@ -1,13 +1,24 @@
 // vpad / vpadbase / padscore HLE. The GamePad (VPAD channel 0) is fed from input::gamepad();
 // no Wii Remotes / Pro Controllers are reported (WPADProbe -> no controller).
 #include <algorithm>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 
 #include "../hle.h"
+#include "../log.h"
 #include "input.h"
+
+#if defined(TARGET_OS_IOS) && TARGET_OS_IOS
+extern "C" void ios_motion_recenter(const char* reason);
+#else
+static inline void ios_motion_recenter(const char*) {}
+#endif
 
 namespace {
 uint32_t g_prev_buttons = 0;
 uint32_t g_sampling_cb = 0;
+int g_gyro_api_logs = 0;
 
 void wf(uint32_t a, float v) { mem::wf32(a, v); }
 }  // namespace
@@ -34,9 +45,13 @@ HLE_EXPORT(vpad, VPADRead) {
     };
     hold |= stick_bits(s.lx, s.ly, 0x08000000) | stick_bits(s.rx, s.ry, 0x00800000);
     mem::w32(buf + 0x00, hold);
-    mem::w32(buf + 0x04, hold & ~g_prev_buttons);
+    uint32_t trig = hold & ~g_prev_buttons;
+    mem::w32(buf + 0x04, trig);
     mem::w32(buf + 0x08, g_prev_buttons & ~hold);
     g_prev_buttons = hold;
+    if (trig & (input::BTN_ZR | input::BTN_L | input::BTN_R | input::BTN_STICK_R)) {
+        ios_motion_recenter("aim_btn");
+    }
     wf(buf + 0x0C, s.lx);
     wf(buf + 0x10, s.ly);
     wf(buf + 0x14, s.rx);
@@ -80,11 +95,22 @@ HLE_EXPORT(vpad, VPADControlMotor) {
     RET(input::push_rumble(mem::host(ARG(1)), (int)bits) ? 0 : (uint32_t)-1);
 }
 HLE_EXPORT(vpad, VPADStopMotor) { input::clear_rumble(); }
-HLE_EXPORT(vpad, VPADDisableGyroDirRevise) {}
-HLE_EXPORT(vpad, VPADEnableGyroAccRevise) {}
+HLE_EXPORT(vpad, VPADDisableGyroDirRevise) {
+    if (g_gyro_api_logs < 16) { g_gyro_api_logs++; LOG("[vpad-gyro] VPADDisableGyroDirRevise chan=%u", ARG(0)); }
+}
+HLE_EXPORT(vpad, VPADEnableGyroAccRevise) {
+    if (g_gyro_api_logs < 16) { g_gyro_api_logs++; LOG("[vpad-gyro] VPADEnableGyroAccRevise chan=%u", ARG(0)); }
+    ios_motion_recenter("VPADEnableGyroAccRevise");
+}
 HLE_EXPORT(vpad, VPADSetGyroAccReviseParam) {}
-HLE_EXPORT(vpad, VPADSetGyroDirection) {}
-HLE_EXPORT(vpad, VPADSetGyroZeroDriftMode) {}
+HLE_EXPORT(vpad, VPADSetGyroDirection) {
+    if (g_gyro_api_logs < 16) { g_gyro_api_logs++; LOG("[vpad-gyro] VPADSetGyroDirection chan=%u", ARG(0)); }
+    ios_motion_recenter("VPADSetGyroDirection");
+}
+HLE_EXPORT(vpad, VPADSetGyroZeroDriftMode) {
+    if (g_gyro_api_logs < 16) { g_gyro_api_logs++; LOG("[vpad-gyro] VPADSetGyroZeroDriftMode chan=%u mode=%u", ARG(0), ARG(1)); }
+    ios_motion_recenter("VPADSetGyroZeroDriftMode");
+}
 HLE_EXPORT(vpad, VPADSetSamplingCallback) {
     uint32_t prev = g_sampling_cb;
     g_sampling_cb = ARG(1);

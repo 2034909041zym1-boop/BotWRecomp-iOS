@@ -30,6 +30,6 @@ struct Motion {
     float dir[9];                                   // attitude matrix (x, y, z axes)
 };
 void motion_sensor(bool gyro, const float data[3], uint64_t timestamp_ns);  // SDL units: rad/s, m/s^2
-void motion_reset();
+void motion_reset(bool flat = false);
 bool motion(Motion* out);  // false until a controller with motion sensors reports
 }  // namespace input
