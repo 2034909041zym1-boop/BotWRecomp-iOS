@@ -14,6 +14,7 @@ extern "C" {
 void swkbd_ui_show(const char* initial, int max_len);
 void swkbd_ui_hide(void);
 int swkbd_ui_poll(void);
+void swkbd_ui_pump(void);
 void swkbd_ui_text(char* out, int cap);
 }
 constexpr bool kHasHostKeyboard = true;
@@ -21,6 +22,7 @@ constexpr bool kHasHostKeyboard = true;
 constexpr bool kHasHostKeyboard = false;
 static void swkbd_ui_show(const char*, int) {}
 static void swkbd_ui_hide() {}
+static void swkbd_ui_pump() {}
 static int swkbd_ui_poll() { return 1; }  // no host keyboard: accept straight away
 static void swkbd_ui_text(char* out, int cap) {
     if (cap > 0) out[0] = 0;
@@ -135,6 +137,7 @@ void set_text_from_guest(uint32_t src) {
 // game always moves on.
 void poll_host_keyboard() {
     if (!kHasHostKeyboard || !g_active) return;
+    swkbd_ui_pump();
     const int r = swkbd_ui_poll();
     if (r == 1 || r == 2) {
         char buf[512];

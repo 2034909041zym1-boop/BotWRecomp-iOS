@@ -155,7 +155,17 @@ extern "C" void swkbd_ui_show(const char* initial, int max_len) {
     g_panel.hidden = NO;
     [g_panel.superview bringSubviewToFront:g_panel];
     g_shown = 1;
-    LOG("[swkbd-ui] shown init='%s' max=%u", g_text, g_maxLen);
+    // The emulator owns the main thread, so nothing else services UIKit or commits the layer tree.
+    [CATransaction flush];
+    LOG("[swkbd-ui] shown init='%s' max=%u host=%s", g_text, g_maxLen,
+        g_panel.superview ? "ok" : "missing");
+}
+
+// Lets UIKit deliver touches and commit the layer tree while the emulator keeps the main thread.
+extern "C" void swkbd_ui_pump(void) {
+    if (!g_shown) return;
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
+    [CATransaction flush];
 }
 
 extern "C" void swkbd_ui_hide(void) { hide_panel(); }

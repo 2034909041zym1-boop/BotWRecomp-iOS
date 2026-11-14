@@ -613,15 +613,13 @@ void botw_window_phys_size(int& w, int& h) {
 }
 
 #if TARGET_OS_IOS
-// The UIView the game draws into. Host UI (the swkbd keyboard) is added on top of it. Going through
-// the SDL window avoids UIApplication.windows, which can block while the emulator owns the main thread.
+// The UIWindow, for host UI (the swkbd keyboard) that must sit above everything the game draws.
+// Using the window rather than the renderer's view guarantees the overlay is not covered by it.
 void* botw_ui_root_view() {
     SDL_Window* win = window::g_win_ptr();
     if (!win) return nullptr;
     UIWindow* uiwin = (__bridge UIWindow*)SDL_GetPointerProperty(
         SDL_GetWindowProperties(win), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr);
-    if (!uiwin) return nullptr;
-    UIViewController* vc = uiwin.rootViewController;
-    return vc ? (__bridge void*)vc.view : nullptr;
+    return uiwin ? (__bridge void*)uiwin : nullptr;
 }
 #endif
