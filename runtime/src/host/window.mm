@@ -9,6 +9,10 @@
 #import <QuartzCore/CAMetalLayer.h>
 #include <SDL3/SDL.h>
 
+#if TARGET_OS_IOS
+extern "C" void swkbd_ui_precreate();  // host/soft_keyboard.mm
+#endif
+
 #include <atomic>
 #include <condition_variable>
 #include <cstring>
@@ -397,9 +401,6 @@ void display_pixel_size(int* w, int* h) {
 }
 
 void on_frame(uint64_t f) {
-#if TARGET_OS_IOS
-    extern "C" void swkbd_ui_precreate();
-#endif
     g_frame = f;
     if (g_trace_to) g_trace_hle = f >= g_trace_from && f < g_trace_to;
 #if TARGET_OS_IOS
