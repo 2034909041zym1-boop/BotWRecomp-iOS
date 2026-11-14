@@ -100,87 +100,20 @@ void MetalMemoryManager::UploadToBufferCache(const void* data, size_t offset, si
 
     if (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate)
     {
+        auto blitCommandEncoder = m_mtlr->GetBlitCommandEncoder();
+
         auto allocation = m_stagingAllocator.AllocateBufferMemory(size, 1);
         memcpy(allocation.memPtr, data, size);
         m_stagingAllocator.FlushReservation(allocation);
 
-        if (m_mtlr->GetEncoderType() == MetalEncoderType::Render)
-        {
-            m_pendingBufferUploads.push_back({allocation.mtlBuffer, allocation.bufferOffset, offset, size});
-        }
-        else
-        {
-            if (!m_pendingBufferUploads.empty())
-                FlushPendingBufferUploads();
-            auto blitCommandEncoder = m_mtlr->GetBlitCommandEncoder();
-            blitCommandEncoder->copyFromBuffer(allocation.mtlBuffer, allocation.bufferOffset, m_bufferCache, offset, size);
-        }
+        blitCommandEncoder->copyFromBuffer(allocation.mtlBuffer, allocation.bufferOffset, m_bufferCache, offset, size);
+
+        //m_mtlr->CopyBufferToBuffer(allocation.mtlBuffer, allocation.bufferOffset, m_bufferCache, offset, size, ALL_MTL_RENDER_STAGES, ALL_MTL_RENDER_STAGES);
     }
     else
     {
         memcpy((uint8*)m_bufferCache->contents() + offset, data, size);
     }
-}
-
-void MetalMemoryManager::FlushPendingBufferUploads()
-{
-    if (m_pendingBufferUploads.empty())
-        return;
-
-    auto uploads = std::move(m_pendingBufferUploads);
-    m_pendingBufferUploads.clear();
-
-    auto blitCommandEncoder = m_mtlr->GetBlitCommandEncoder();
-    for (const auto& u : uploads)
-    {
-        blitCommandEncoder->copyFromBuffer(u.srcBuffer, u.srcOffset, m_bufferCache, u.dstOffset, u.size);
-    }
-}
-
-bool MetalMemoryManager::HasUnsafePendingOverlap(size_t offset) const
-{
-    const PendingBufferUpload* matched = nullptr;
-    for (auto it = m_pendingBufferUploads.rbegin(); it != m_pendingBufferUploads.rend(); ++it)
-    {
-        const auto& u = *it;
-        if (!matched)
-        {
-            if (offset >= u.dstOffset && offset < u.dstOffset + u.size)
-            {
-                matched = &u;
-                continue;
-            }
-            if (u.dstOffset > offset && (u.dstOffset - offset) < (4u * 1024u * 1024u))
-                return true;
-        }
-        else
-        {
-            // If an older pending upload overlaps the matched range without being fully covered by it, flush to be safe.
-            size_t mEnd = matched->dstOffset + matched->size;
-            size_t uEnd = u.dstOffset + u.size;
-            if (u.dstOffset < mEnd && uEnd > matched->dstOffset)
-            {
-                if (u.dstOffset < matched->dstOffset || uEnd > mEnd)
-                    return true;
-            }
-        }
-    }
-    return false;
-}
-
-void MetalMemoryManager::ResolveBufferCacheBinding(size_t offset, MTL::Buffer*& outBuffer, size_t& outOffset) const
-{
-    for (auto it = m_pendingBufferUploads.rbegin(); it != m_pendingBufferUploads.rend(); ++it)
-    {
-        if (offset >= it->dstOffset && offset < it->dstOffset + it->size)
-        {
-            outBuffer = it->srcBuffer;
-            outOffset = it->srcOffset + (offset - it->dstOffset);
-            return;
-        }
-    }
-    outBuffer = m_bufferCache;
-    outOffset = offset;
 }
 
 void MetalMemoryManager::CopyBufferCache(size_t srcOffset, size_t dstOffset, size_t size)
@@ -189,10 +122,7 @@ void MetalMemoryManager::CopyBufferCache(size_t srcOffset, size_t dstOffset, siz
     cemu_assert_debug(m_bufferCache);
 
     if (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate)
-    {
-        FlushPendingBufferUploads();
         m_mtlr->CopyBufferToBuffer(m_bufferCache, srcOffset, m_bufferCache, dstOffset, size, ALL_MTL_RENDER_STAGES, ALL_MTL_RENDER_STAGES);
-    }
     else
         memcpy((uint8*)m_bufferCache->contents() + dstOffset, (uint8*)m_bufferCache->contents() + srcOffset, size);
 }

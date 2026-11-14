@@ -39,18 +39,10 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
     double dt_s = std::chrono::duration<double>(now_tp - s_prev_tp).count();
     s_prev_tp = now_tp;
     uint64_t gpu_us = g_gpu_hw_time_us.exchange(0, std::memory_order_relaxed);
-    uint64_t gpu_passes = g_gpu_render_passes.exchange(0, std::memory_order_relaxed);
-    uint64_t gpu_blits = g_gpu_blit_splits.exchange(0, std::memory_order_relaxed);
-    uint64_t gpu_cmds = g_gpu_cmd_buffers.exchange(0, std::memory_order_relaxed);
     double gpu_ms_f = 0.0, us_per_draw = 0.0;
-    double passes_f = 0.0, blits_f = 0.0, cmds_f = 0.0;
     if (dt_s > 0.05 && fps > 0.5) {
-        double frames = fps * dt_s;
-        gpu_ms_f = ((double)gpu_us / 1000.0) / frames;
+        gpu_ms_f = ((double)gpu_us / 1000.0) / (fps * dt_s);
         if (drawcalls > 0) us_per_draw = (gpu_ms_f * 1000.0) / (double)drawcalls;
-        passes_f = (double)gpu_passes / frames;
-        blits_f = (double)gpu_blits / frames;
-        cmds_f = (double)gpu_cmds / frames;
     }
     if (!g_boot_world_ready.load(std::memory_order_relaxed)) {
         static int s_world_ticks = 0;
@@ -66,9 +58,8 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
     }
     static int n = 0;
     if (fps > 0 && (n++ % 3) == 0)
-        log_write("[gpu] %.1f fps, %d draws/frame (%d fast), gpu_hw=%.2fms/f (%.2fus/d), passes=%.1f/f (blit_splits=%.1f/f), cmds=%.1f/f, %s lp=%d; main thread waits: %s",
+        log_write("[gpu] %.1f fps, %d draws/frame (%d fast), gpu_hw=%.2fms/f (%.2fus/d), %s lp=%d; main thread waits: %s",
                   fps, drawcalls, fastDrawcalls, gpu_ms_f, us_per_draw,
-                  passes_f, blits_f, cmds_f,
                   botw_thermal_state_name(botw_thermal_state()), (int)botw_low_power_mode(),
                   threads::main_wait_report().c_str());
 }
