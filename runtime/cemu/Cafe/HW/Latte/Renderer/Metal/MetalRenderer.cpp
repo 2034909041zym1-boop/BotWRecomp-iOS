@@ -12,6 +12,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalVoidVertexPipeline.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalQuery.h"
 #include "Cafe/HW/Latte/Renderer/Metal/LatteToMtl.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalFrameGen.h"
 #include "Cafe/HW/Latte/Renderer/Metal/UtilityShaderSource.h"
 
 #include "Cafe/HW/Latte/Core/LatteShader.h"
@@ -28,6 +29,9 @@
 #include "imgui/imgui_impl_metal.h"
 
 extern "C" bool botw_is_background();
+namespace menu {
+bool is_open();
+}
 extern "C" void botw_wait_while_background();
 extern "C" void botw_record_gpu_time_us(uint64_t us);
 extern float g_render_scale;
@@ -314,6 +318,7 @@ MetalRenderer::~MetalRenderer()
     }
 #endif
 
+    delete m_frameGen;
     delete m_outputShaderCache;
     delete m_pipelineCache;
     delete m_depthStencilCache;
@@ -506,16 +511,76 @@ void MetalRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool padV
 		SaveScreenshot(rgb_data, width, height, !padView);
 }
 
+bool MetalRenderer::FrameGenPrepare(LatteTextureView* texView, bool padView)
+{
+    m_fgInterpolatedThisFrame = false;
+    if (padView || !texView || botw_is_background() || menu::is_open())
+    {
+        if (m_frameGen) m_frameGen->ResetHistory();
+        m_fgLastNs = 0;
+        return false;
+    }
+
+    const uint64_t nowNs = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const double dt = m_fgLastNs ? (nowNs - m_fgLastNs) * 1e-9 : 0.0;
+    m_fgLastNs = nowNs;
+
+    // Skip interpolation if already running >= ~50 FPS or after a long pause/loading screen
+    const bool allowGen = (dt >= 0.020 && dt <= 0.25);
+
+    if (!m_frameGen)
+        m_frameGen = new MetalFrameGen(m_device);
+
+    EndEncoding();
+    MTL::Texture* srcTex = static_cast<LatteTextureViewMtl*>(texView)->GetRGBAView();
+    if (!m_frameGen->Process(GetCommandBuffer(), srcTex, allowGen))
+        return false;
+
+    m_fgInterpolatedThisFrame = true;
+    m_fgDelaySec = std::clamp(dt * 0.48, 0.008, 0.019);
+    return true;
+}
+
+void MetalRenderer::DrawBackbufferQuadInterpolated(RendererOutputShader* shader, bool useLinearTexFilter,
+                                                   sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
+                                                   bool padView, bool clearBackground)
+{
+    if (!m_frameGen || !m_frameGen->GetInterpTexture())
+        return;
+    DrawBackbufferTexture(m_frameGen->GetInterpTexture(), shader, useLinearTexFilter,
+                          imageX, imageY, imageWidth, imageHeight, padView, clearBackground);
+}
+
+void MetalRenderer::FrameGenPresentInterpolated(bool mainWindow)
+{
+    if (botw_is_background())
+    {
+        GetLayer(mainWindow).ReleaseDrawable();
+        return;
+    }
+    if (!AcquireDrawable(mainWindow))
+        return;
+    GetLayer(mainWindow).PresentDrawable(GetCommandBuffer());
+    CommitCommandBuffer();
+}
+
 void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter,
 								sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
 								bool padView, bool clearBackground)
 {
-    if (!AcquireDrawable(!padView))
+    MTL::Texture* presentTexture = static_cast<LatteTextureViewMtl*>(texView)->GetRGBAView();
+    DrawBackbufferTexture(presentTexture, shader, useLinearTexFilter, imageX, imageY, imageWidth, imageHeight, padView, clearBackground);
+}
+
+void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, RendererOutputShader* shader, bool useLinearTexFilter,
+								sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
+								bool padView, bool clearBackground)
+{
+    if (!presentTexture || !AcquireDrawable(!padView))
         return;
 
     ScopedAutoreleasePool pool;
-
-    MTL::Texture* presentTexture = static_cast<LatteTextureViewMtl*>(texView)->GetRGBAView();
 
     // Create render pass
     auto& layer = GetLayer(!padView);
@@ -2499,7 +2564,15 @@ void MetalRenderer::SwapBuffer(bool mainWindow)
         return;
 
     auto commandBuffer = GetCommandBuffer();
-    GetLayer(mainWindow).PresentDrawable(commandBuffer);
+    if (mainWindow && m_fgInterpolatedThisFrame)
+    {
+        GetLayer(mainWindow).PresentDrawableDelayed(commandBuffer, m_fgDelaySec);
+        m_fgInterpolatedThisFrame = false;
+    }
+    else
+    {
+        GetLayer(mainWindow).PresentDrawable(commandBuffer);
+    }
 }
 
 void MetalRenderer::EnsureImGuiBackend()

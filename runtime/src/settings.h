@@ -29,6 +29,7 @@ struct Settings {
     int look_accel = 1;    // 1 = mild non-linear camera acceleration, 0 = linear
     int touch_alpha = 75;  // virtual button opacity percent (25..100)
     int macro_btns = 1;    // 1 = show quick macro buttons (WB / PR / BT), 0 = hide
+    int frame_gen = 0;     // 0 = off, 1 = 2x optical flow frame generation (experimental)
 };
 
 namespace settings {

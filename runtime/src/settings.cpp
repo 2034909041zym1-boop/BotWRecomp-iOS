@@ -24,9 +24,9 @@ void save_locked() {
     FILE* f = fopen(g_path.c_str(), "w");
     if (!f) return;
     fprintf(f, "# BotWRecomp settings (also editable from the in-game menu: touchpad, L3+R3 or F1)\n");
-    fprintf(f, "fps=%d\nscale=%g\ndisplay=%d\nfilter=%d\naa=%d\ngyro=%d\nrumble=%d\nlayout=%d\nshow_fps=%d\nvolume=%d\ntouch=%d\ntouch_hidden=%d\nstick_fixed=%d\nlook_sens=%g\nlook_accel=%d\ntouch_alpha=%d\nmacro_btns=%d\n", g_s.fps,
+    fprintf(f, "fps=%d\nscale=%g\ndisplay=%d\nfilter=%d\naa=%d\ngyro=%d\nrumble=%d\nlayout=%d\nshow_fps=%d\nvolume=%d\ntouch=%d\ntouch_hidden=%d\nstick_fixed=%d\nlook_sens=%g\nlook_accel=%d\ntouch_alpha=%d\nmacro_btns=%d\nframe_gen=%d\n", g_s.fps,
             g_s.scale, g_s.display, g_s.filter, g_s.aa, g_s.gyro, g_s.rumble, g_s.layout, g_s.show_fps, g_s.volume, g_s.touch, g_s.touch_hidden,
-            g_s.stick_fixed, g_s.look_sens, g_s.look_accel, g_s.touch_alpha, g_s.macro_btns);
+            g_s.stick_fixed, g_s.look_sens, g_s.look_accel, g_s.touch_alpha, g_s.macro_btns, g_s.frame_gen);
     fclose(f);
 }
 }  // namespace
@@ -42,6 +42,7 @@ void apply() {
     latte::set_display_mode(s.display);
     latte::set_output_filter(s.filter);
     latte::set_aa_mode(s.aa);
+    latte::set_frame_gen(s.frame_gen);
     window::set_gyro(s.gyro);
     window::set_rumble(s.rumble);
     window::set_layout(s.layout);
@@ -91,6 +92,7 @@ void load(const std::string& path) {
                 else if (!strcmp(line, "look_accel")) g_s.look_accel = atoi(v) != 0 ? 1 : 0;
                 else if (!strcmp(line, "touch_alpha")) g_s.touch_alpha = std::clamp(atoi(v), 25, 100);
                 else if (!strcmp(line, "macro_btns")) g_s.macro_btns = atoi(v) != 0 ? 1 : 0;
+                else if (!strcmp(line, "frame_gen")) g_s.frame_gen = atoi(v) != 0 ? 1 : 0;
             }
             fclose(f);
             LOG("settings: %s", path.c_str());

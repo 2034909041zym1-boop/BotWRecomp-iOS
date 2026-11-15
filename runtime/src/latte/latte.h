@@ -41,6 +41,8 @@ void set_display_mode(int mode);
 void set_output_filter(int filter);
 // Post-process anti-aliasing: 0 off, 1 FXAA, 2 FXAA + CAS sharpen
 void set_aa_mode(int mode);
+// Optical-flow frame generation (experimental): 0 off, 1 2x
+void set_frame_gen(int mode);
 void init();
 // --capture N: save the TV image every N frames as PNG into dir
 void set_capture(int every, const char* dir);

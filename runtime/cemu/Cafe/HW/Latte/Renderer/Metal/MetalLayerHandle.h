@@ -23,6 +23,8 @@ public:
 
     void PresentDrawable(MTL::CommandBuffer* commandBuffer);
 
+    void PresentDrawableDelayed(MTL::CommandBuffer* commandBuffer, double delaySec);
+
     void ReleaseDrawable();
 
     CA::MetalLayer* GetLayer() const { return m_layer; }

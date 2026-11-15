@@ -998,7 +998,20 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 		}
 	}
 	cemu_assert(shader);
-	g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
+	const bool linearFilter = (filter == LatteTextureView::MagFilter::kLinear);
+	if (!isPadView && GetConfig().frame_gen != 0 && g_renderer->FrameGenPrepare(textureView, isPadView))
+	{
+		g_renderer->DrawBackbufferQuadInterpolated(shader, linearFilter, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
+		if (g_renderer->ImguiBegin(true))
+		{
+			swkbd_render(true);
+			nn::erreula::render(true);
+			LatteOverlay_render(false);
+			g_renderer->ImguiEnd();
+		}
+		g_renderer->FrameGenPresentInterpolated(true);
+	}
+	g_renderer->DrawBackbufferQuad(textureView, shader, linearFilter, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
 	g_renderer->HandleScreenshotRequest(textureView, isPadView);
 	if (!g_renderer->ImguiBegin(!isPadView))
 		return;

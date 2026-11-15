@@ -185,6 +185,11 @@ public:
 	void DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter,
 									sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
 									bool padView, bool clearBackground) override;
+	bool FrameGenPrepare(LatteTextureView* texView, bool padView) override;
+	void DrawBackbufferQuadInterpolated(RendererOutputShader* shader, bool useLinearTexFilter,
+												sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
+												bool padView, bool clearBackground) override;
+	void FrameGenPresentInterpolated(bool mainWindow) override;
 	bool BeginFrame(bool mainWindow) override;
 
 	// flush control
@@ -578,6 +583,14 @@ private:
 	}
 
 	void SwapBuffer(bool mainWindow);
+	void DrawBackbufferTexture(MTL::Texture* presentTexture, RendererOutputShader* shader, bool useLinearTexFilter,
+								sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
+								bool padView, bool clearBackground);
+
+	class MetalFrameGen* m_frameGen = nullptr;
+	bool m_fgInterpolatedThisFrame = false;
+	double m_fgDelaySec = 0.016;
+	uint64_t m_fgLastNs = 0;
 
 	void EnsureImGuiBackend();
 

@@ -77,6 +77,11 @@ public:
 	virtual void DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter,
 												sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
 												bool padView, bool clearBackground) = 0;
+	virtual bool FrameGenPrepare(LatteTextureView* texView, bool padView) { return false; }
+	virtual void DrawBackbufferQuadInterpolated(RendererOutputShader* shader, bool useLinearTexFilter,
+												sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
+												bool padView, bool clearBackground) {}
+	virtual void FrameGenPresentInterpolated(bool mainWindow) {}
 	virtual bool BeginFrame(bool mainWindow) = 0;
 
 	// flush control

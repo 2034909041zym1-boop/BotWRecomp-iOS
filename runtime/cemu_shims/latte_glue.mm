@@ -199,6 +199,7 @@ void set_output_filter(int f) {  // upscaling uses the choice; downscaling stays
     GetConfig().downscale_filter = f == kNearestNeighborFilter ? kNearestNeighborFilter : kLinearFilter;
 }
 void set_aa_mode(int mode) { GetConfig().aa_mode = mode; }
+void set_frame_gen(int mode) { GetConfig().frame_gen = mode; }
 
 void set_scanout_srgb(bool tv, bool srgb) {
     if (tv) LatteGPUState.tvBufferUsesSRGB = srgb;

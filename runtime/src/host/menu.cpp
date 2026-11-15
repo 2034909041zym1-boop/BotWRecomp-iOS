@@ -17,7 +17,7 @@ std::atomic<bool> g_open{false};
 int g_cursor = 0;
 
 enum RowId {
-    kFps, kScale, kAA, kFilter, kDisplay, kShowFps,
+    kFps, kFrameGen, kScale, kAA, kFilter, kDisplay, kShowFps,
     kGyro, kRumble, kLayout, kTouch, kStickFixed, kLookSens, kLookAccel, kTouchAlpha, kMacroBtns,
     kVolume, kClose, kRows
 };
@@ -40,6 +40,7 @@ void step(Settings& s, int row, int dir) {
     auto wrap = [](int v, int n) { return (v % n + n) % n; };
     switch (row) {
         case kFps: s.fps = s.fps >= 60 ? 30 : 60; break;
+        case kFrameGen: s.frame_gen = s.frame_gen ? 0 : 1; break;
         case kScale: {
             int i = 0;
             for (int k = 0; k < (int)std::size(kScales); k++)
@@ -166,6 +167,7 @@ View view() {
     char b[128];
     v.rows.resize(kRows);
     v.rows[kFps] = {"帧率模式", s.fps >= 60 ? "60 帧 (高负载)" : "30 帧 (流畅省电)", false, "画质与性能"};
+    v.rows[kFrameGen] = {"帧生成 (实验性)", s.frame_gen ? "2x 光流插帧 (建议配30帧)" : "关闭"};
     v.rows[kScale] = {"渲染分辨率", scale_text(s.scale)};
     v.rows[kAA] = {"抗锯齿", kAAModes[std::clamp(s.aa, 0, 3)]};
     v.rows[kFilter] = {"缩放滤镜", s.aa > 0 ? "由抗锯齿接管" : kFilters[std::clamp(s.filter, 0, 3)]};

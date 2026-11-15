@@ -83,6 +83,16 @@ void MetalLayerHandle::PresentDrawable(MTL::CommandBuffer* commandBuffer)
     }
 }
 
+void MetalLayerHandle::PresentDrawableDelayed(MTL::CommandBuffer* commandBuffer, double delaySec)
+{
+    if (m_drawable)
+    {
+        commandBuffer->presentDrawableAfterMinimumDuration(m_drawable, delaySec);
+        m_drawable->release();
+        m_drawable = nullptr;
+    }
+}
+
 void MetalLayerHandle::ReleaseDrawable()
 {
     if (m_drawable)
