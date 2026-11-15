@@ -22,7 +22,7 @@ enum RowId {
     kVolume, kClose, kRows
 };
 const float kScales[] = {0, 0.5f, 0.75f, 0.8f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the display
-const float kLookSens[] = {1.0f, 1.3f, 1.6f, 2.0f, 2.5f, 3.0f};
+const float kLookSensValues[] = {1.0f, 1.3f, 1.6f, 2.0f, 2.5f, 3.0f};
 const int kTouchAlphas[] = {25, 50, 75, 100};
 const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (裁剪)", "宽屏 hor+ (重启后生效)"};
 const char* kFilters[] = {"双线性 (Bilinear)", "双三次 (Bicubic)", "埃尔米特 (Hermite)", "邻近采样 (Nearest)"};
@@ -57,9 +57,9 @@ void step(Settings& s, int row, int dir) {
         case kStickFixed: s.stick_fixed = s.stick_fixed ? 0 : 1; break;
         case kLookSens: {
             int i = 2;
-            for (int k = 0; k < (int)std::size(kLookSens); k++)
-                if (fabsf(kLookSens[k] - s.look_sens) < 0.05f) i = k;
-            s.look_sens = kLookSens[wrap(i + dir, (int)std::size(kLookSens))];
+            for (int k = 0; k < (int)std::size(kLookSensValues); k++)
+                if (fabsf(kLookSensValues[k] - s.look_sens) < 0.05f) i = k;
+            s.look_sens = kLookSensValues[wrap(i + dir, (int)std::size(kLookSensValues))];
             break;
         }
         case kLookAccel: s.look_accel = s.look_accel ? 0 : 1; break;
