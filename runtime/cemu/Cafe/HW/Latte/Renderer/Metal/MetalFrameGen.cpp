@@ -5,6 +5,13 @@
 
 namespace
 {
+struct LocalAutoreleasePool
+{
+    NS::AutoreleasePool* pool;
+    LocalAutoreleasePool() : pool(NS::AutoreleasePool::alloc()->init()) {}
+    ~LocalAutoreleasePool() { if (pool) pool->release(); }
+};
+
 struct FGParams
 {
     uint32_t w;
@@ -271,7 +278,7 @@ bool MetalFrameGen::EnsurePipelines()
     if (m_psoInterpolate) return true;
     if (m_initFailed || !m_device) return false;
 
-    ScopedAutoreleasePool pool;
+    LocalAutoreleasePool pool;
     NS::Error* error = nullptr;
     m_library = m_device->newLibrary(ToNSString(kFrameGenMSL), nullptr, &error);
     if (!m_library)
@@ -397,7 +404,7 @@ bool MetalFrameGen::EnsureTextures(uint32_t w, uint32_t h, bool isSRGB)
 bool MetalFrameGen::Process(MTL::CommandBuffer* cmdBuf, MTL::Texture* srcTex, bool generate)
 {
     if (!cmdBuf || !srcTex) return false;
-    ScopedAutoreleasePool pool;
+    LocalAutoreleasePool pool;
     const uint32_t w = (uint32_t)srcTex->width();
     const uint32_t h = (uint32_t)srcTex->height();
     if (w < 64 || h < 64) return false;
