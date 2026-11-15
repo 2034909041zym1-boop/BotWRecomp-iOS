@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <pthread.h>
 
 #include "../src/host/menu.h"
@@ -80,8 +81,62 @@ void LatteOverlay_render(bool padView) {
     float px, py;
     bool down;
     menu::pointer_state(&px, &py, &down);
-    io.AddMousePosEvent(px, py);
-    io.AddMouseButtonEvent(0, down);
+
+    static bool s_was_down = false;
+    static bool s_drag_in_list = false;
+    static bool s_drag_scrolling = false;
+    static float s_drag_start_y = 0.0f;
+    static float s_drag_last_y = 0.0f;
+    static float s_scroll_delta = 0.0f;
+    static float s_scroll_vel = 0.0f;
+    static ImVec2 s_list_min{0, 0}, s_list_max{0, 0};
+
+    const bool menu_open = menu::is_open();
+    if (!menu_open) {
+        s_was_down = s_drag_in_list = s_drag_scrolling = false;
+        s_scroll_delta = s_scroll_vel = 0.0f;
+        io.AddMousePosEvent(px, py);
+        io.AddMouseButtonEvent(0, down);
+    } else {
+        bool suppress_click = false;
+        if (down && !s_was_down) {
+            s_drag_in_list = (px >= s_list_min.x && px <= s_list_max.x && py >= s_list_min.y && py <= s_list_max.y);
+            s_drag_scrolling = false;
+            s_drag_start_y = py;
+            s_drag_last_y = py;
+            if (s_drag_in_list) s_scroll_vel = 0.0f;
+        } else if (down && s_was_down && s_drag_in_list) {
+            const float dy = py - s_drag_last_y;
+            s_drag_last_y = py;
+            if (!s_drag_scrolling && std::fabs(py - s_drag_start_y) > 8.0f * ui) {
+                s_drag_scrolling = true;
+            }
+            if (s_drag_scrolling) {
+                s_scroll_delta -= dy;
+                s_scroll_vel = -dy;
+                suppress_click = true;
+            }
+        } else if (!down) {
+            if (s_was_down && s_drag_scrolling) suppress_click = true;
+            s_drag_in_list = false;
+            s_drag_scrolling = false;
+            if (std::fabs(s_scroll_vel) > 0.35f) {
+                s_scroll_delta += s_scroll_vel;
+                s_scroll_vel *= 0.86f;
+            } else {
+                s_scroll_vel = 0.0f;
+            }
+        }
+        s_was_down = down;
+
+        if (suppress_click) {
+            io.AddMousePosEvent(-1.0f, -1.0f);
+            io.AddMouseButtonEvent(0, false);
+        } else {
+            io.AddMousePosEvent(px, py);
+            io.AddMouseButtonEvent(0, down);
+        }
+    }
 
     const ImGuiWindowFlags overlay = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
@@ -177,7 +232,15 @@ void LatteOverlay_render(bool padView) {
         ImGui::Separator();
 
         const float list_h = std::min(io.DisplaySize.y * 0.62f, 430.0f * ui);
-        ImGui::BeginChild("##menu_rows", {row_w + 18.0f * ui, list_h}, false);
+        ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 12.0f * ui);
+        ImGui::BeginChild("##menu_rows", {row_w + 22.0f * ui, list_h}, false);
+        if (s_scroll_delta != 0.0f) {
+            const float max_y = ImGui::GetScrollMaxY();
+            const float next_y = std::clamp(ImGui::GetScrollY() + s_scroll_delta, 0.0f, max_y);
+            ImGui::SetScrollY(next_y);
+            if (next_y <= 0.0f || next_y >= max_y) s_scroll_vel = 0.0f;
+            s_scroll_delta = 0.0f;
+        }
         for (int i = 0; i < (int)v.rows.size(); i++) {
             const menu::Row& r = v.rows[i];
             if (r.section) {
@@ -217,12 +280,15 @@ void LatteOverlay_render(bool padView) {
             ImGui::PopID();
         }
         ImGui::EndChild();
+        s_list_min = ImGui::GetItemRectMin();
+        s_list_max = ImGui::GetItemRectMax();
+        ImGui::PopStyleVar();
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::SetWindowFontScale(font_scale * 0.82f);
         ImGui::TextColored(ImVec4(0.75f, 0.82f, 0.88f, 0.95f), "%s", v.note.c_str());
-        ImGui::TextColored(ImVec4(0.58f, 0.65f, 0.72f, 0.90f), "点击左右箭头或选项切换  ·  方向键选择 / A确认 / B或点外部关闭");
+        ImGui::TextColored(ImVec4(0.58f, 0.65f, 0.72f, 0.90f), "上下滑动列表  ·  点击 < > 或选项切换  ·  点外部关闭");
 
         // for touch (host side, see menu::touch_close): panel and X in fractions of the screen
         const ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize(), d = io.DisplaySize;
