@@ -175,7 +175,7 @@ View view() {
     v.rows[kRumble] = {"手柄震动", s.rumble ? "开启" : "关闭"};
     v.rows[kLayout] = {"按键布局", s.layout ? "Xbox (A在下)" : "任天堂 (A在右)"};
     v.rows[kTouch] = {"虚拟按键", s.touch == 1 ? "常开" : s.touch == 2 ? "关闭" : "自动 (连手柄隐藏)"};
-    v.rows[kStickFixed] = {"左摇杆模式", s.stick_fixed ? "固定位置 (推荐)" : "跟随手指"};
+    v.rows[kStickFixed] = {"左摇杆模式", s.stick_fixed ? "落点定心 (推荐)" : "持续跟随"};
     snprintf(b, sizeof b, "%gx", s.look_sens);
     v.rows[kLookSens] = {"视角灵敏度", b};
     v.rows[kLookAccel] = {"视角非线性加速", s.look_accel ? "开启 (慢稳快甩)" : "关闭 (线性)"};

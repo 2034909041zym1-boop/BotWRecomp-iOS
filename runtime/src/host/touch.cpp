@@ -579,12 +579,7 @@ void event(const SDL_Event& e) {
             if (g.stick) return;  // one stick finger at a time
             n.role = kStick;
             g.stick = true, g.stick_id = f.fingerID;
-            if (g_stick_fixed && !g_test) {
-                g.bx = g.home_x, g.by = g.home_y;
-                g.kx = x, g.ky = y;
-            } else {
-                g.bx = g.kx = x, g.by = g.ky = y;
-            }
+            g.bx = g.kx = x, g.by = g.ky = y;
         } else {
             if (g.look) return;
             n.role = kLook;
