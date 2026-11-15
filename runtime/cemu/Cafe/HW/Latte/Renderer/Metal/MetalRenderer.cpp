@@ -534,25 +534,8 @@ bool MetalRenderer::FrameGenPrepare(LatteTextureView* texView, bool padView)
     {
         m_fgSmoothDt = 0.7 * m_fgSmoothDt + 0.3 * dt;
         const double nativeFps = 1.0 / std::max(m_fgSmoothDt, 0.004);
-        if (nativeFps < 52.0)
-        {
-            // Plan B: deficit accumulator toward 60 FPS (e.g. 40 native -> +20 interp; 30 native -> +30 interp)
-            const double deficit = std::clamp((60.0 / nativeFps) - 1.0, 0.0, 1.0);
-            m_fgBudget += deficit;
-            if (m_fgBudget >= 1.0)
-            {
-                m_fgBudget -= 1.0;
-                allowGen = true;
-            }
-        }
-        else
-        {
-            m_fgBudget = 0.0;
-        }
-    }
-    else
-    {
-        m_fgBudget = 0.0;
+        // Plan A: uniform 2x interpolation on 120Hz ProMotion (e.g. 40+40=80, 30+30=60)
+        allowGen = (nativeFps < 55.0);
     }
 
     if (!m_frameGen)
@@ -564,8 +547,9 @@ bool MetalRenderer::FrameGenPrepare(LatteTextureView* texView, bool padView)
         return false;
 
     m_fgInterpolatedThisFrame = true;
-    // 7ms keeps real frame after interp frame without skipping an extra 120Hz (8.33ms) or 60Hz (16.67ms) vsync.
-    m_fgDelaySec = 0.007;
+    // Target ~half-frame spacing while staying strictly under 16.67ms so 60Hz never slips to V2
+    // and 120Hz ProMotion (8.33ms ticks) places real frames evenly at ~12.5ms-16.67ms.
+    m_fgDelaySec = std::clamp(m_fgSmoothDt * 0.45, 0.007, 0.015);
     return true;
 }
 
