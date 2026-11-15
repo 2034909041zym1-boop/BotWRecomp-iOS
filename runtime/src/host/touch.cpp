@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
@@ -106,6 +107,91 @@ struct State {
 };
 std::mutex g_lock;
 State g;
+
+struct WbTimings {
+    double zl_end = 70.0;       // 0..zl_end: ZL + fwd
+    double hop_end = 140.0;     // zl_end..hop_end: ZL + X + fwd
+    double round_end = 200.0;   // hop_end..round_end: L (drop round bomb) + fwd
+    double fwd_end = 340.0;     // round_end..fwd_end: fwd only (clear ledge)
+    double zr_end = 376.0;      // fwd_end..zr_end: ZR tap (enter bullet time)
+    double up1_start = 480.0;   // up1_start..up1_end: BTN_UP (switch to square bomb)
+    double up1_end = 660.0;
+    double rx1_start = 540.0;   // rx1_start..rx1_end: rx = +1.0
+    double rx1_end = 630.0;
+    double sq_start = 780.0;    // sq_start..sq_end: L (drop square bomb)
+    double sq_end = 860.0;
+    double up2_start = 1200.0;  // up2_start..up2_end: BTN_UP (switch back to round bomb)
+    double up2_end = 1380.0;
+    double rx2_start = 1260.0;  // rx2_start..rx2_end: rx = -1.0
+    double rx2_end = 1350.0;
+    double det_start = 1500.0;  // det_start..det_end: L (detonate)
+    double det_end = 1580.0;
+};
+WbTimings g_wb;
+std::string g_wb_cfg_path;
+
+void write_default_wb_cfg(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return;
+    fprintf(f,
+            "# Windbomb (WB) macro timings in milliseconds (hot-reloaded every WB tap)\n"
+            "zl_end=70\n"
+            "hop_end=140\n"
+            "round_end=200\n"
+            "fwd_end=340\n"
+            "zr_end=376\n"
+            "up1_start=480\n"
+            "up1_end=660\n"
+            "rx1_start=540\n"
+            "rx1_end=630\n"
+            "sq_start=780\n"
+            "sq_end=860\n"
+            "up2_start=1200\n"
+            "up2_end=1380\n"
+            "rx2_start=1260\n"
+            "rx2_end=1350\n"
+            "det_start=1500\n"
+            "det_end=1580\n");
+    fclose(f);
+}
+
+void load_wb_cfg_locked() {
+    if (g_wb_cfg_path.empty()) return;
+    FILE* f = fopen(g_wb_cfg_path.c_str(), "r");
+    if (!f) {
+        write_default_wb_cfg(g_wb_cfg_path);
+        return;
+    }
+    WbTimings w;
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        if (line[0] == '#' || line[0] == '\n' || line[0] == '\r') continue;
+        char* eq = strchr(line, '=');
+        if (!eq) continue;
+        *eq = 0;
+        const char* k = line;
+        const double v = atof(eq + 1);
+        if (!strcmp(k, "zl_end")) w.zl_end = v;
+        else if (!strcmp(k, "hop_end")) w.hop_end = v;
+        else if (!strcmp(k, "round_end")) w.round_end = v;
+        else if (!strcmp(k, "fwd_end")) w.fwd_end = v;
+        else if (!strcmp(k, "zr_end")) w.zr_end = v;
+        else if (!strcmp(k, "up1_start")) w.up1_start = v;
+        else if (!strcmp(k, "up1_end")) w.up1_end = v;
+        else if (!strcmp(k, "rx1_start")) w.rx1_start = v;
+        else if (!strcmp(k, "rx1_end")) w.rx1_end = v;
+        else if (!strcmp(k, "sq_start")) w.sq_start = v;
+        else if (!strcmp(k, "sq_end")) w.sq_end = v;
+        else if (!strcmp(k, "up2_start")) w.up2_start = v;
+        else if (!strcmp(k, "up2_end")) w.up2_end = v;
+        else if (!strcmp(k, "rx2_start")) w.rx2_start = v;
+        else if (!strcmp(k, "rx2_end")) w.rx2_end = v;
+        else if (!strcmp(k, "det_start")) w.det_start = v;
+        else if (!strcmp(k, "det_end")) w.det_end = v;
+    }
+    fclose(f);
+    g_wb = w;
+}
 
 bool visible_now() { return g_test || (active() && (g_mode == 1 || g_touchscreen)); }
 
@@ -272,34 +358,32 @@ input::PadState contribution(float dt) {
     }
     if (g.macro_id != 0) {
         const double ms = (SDL_GetTicksNS() - g.macro_t0_ns) * 1e-6;
-        if (g.macro_id == 1) {  // WB: Ledge Front-Hop Windbomb (30fps BotW physics)
-            // 1) Drop Round Bomb (L) immediately on hop takeoff (140..200ms) so it stays near the ledge.
-            // 2) Keep ly=1.0 through 340ms to clear the ledge, then single-frame ZR tap (36ms) for Bullet Time.
-            // 3) Wait >=120ms after closing BTN_UP rune menu before L so the menu transition doesn't eat L.
-            if (ms < 70.0) {
+        if (g.macro_id == 1) {  // WB: Ledge Front-Hop Windbomb (configurable via Documents/wb_macro.ini)
+            const WbTimings& w = g_wb;
+            if (ms < w.zl_end) {
                 t.buttons |= input::BTN_ZL;
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 140.0) {
+            } else if (ms < w.hop_end) {
                 t.buttons |= input::BTN_ZL | input::BTN_X;
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 200.0) {
+            } else if (ms < w.round_end) {
                 t.buttons |= input::BTN_L;
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 340.0) {
+            } else if (ms < w.fwd_end) {
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 376.0) {
+            } else if (ms < w.zr_end) {
                 t.buttons |= input::BTN_ZR;
-            } else if (ms >= 480.0 && ms < 660.0) {
+            } else if (ms >= w.up1_start && ms < w.up1_end) {
                 t.buttons |= input::BTN_UP;
-                if (ms >= 540.0 && ms < 630.0) t.rx = 1.0f;
-            } else if (ms >= 780.0 && ms < 860.0) {
+                if (ms >= w.rx1_start && ms < w.rx1_end) t.rx = 1.0f;
+            } else if (ms >= w.sq_start && ms < w.sq_end) {
                 t.buttons |= input::BTN_L;
-            } else if (ms >= 1200.0 && ms < 1380.0) {
+            } else if (ms >= w.up2_start && ms < w.up2_end) {
                 t.buttons |= input::BTN_UP;
-                if (ms >= 1260.0 && ms < 1350.0) t.rx = -1.0f;
-            } else if (ms >= 1500.0 && ms < 1580.0) {
+                if (ms >= w.rx2_start && ms < w.rx2_end) t.rx = -1.0f;
+            } else if (ms >= w.det_start && ms < w.det_end) {
                 t.buttons |= input::BTN_L;
-            } else if (ms >= 1580.0) {
+            } else if (ms >= w.det_end) {
                 g.macro_id = 0;
             }
         } else if (g.macro_id == 2) {  // PR: Parry (ZL shield + A parry)
@@ -550,6 +634,11 @@ void set_macro_buttons(bool show) {
         g.macro_id = 0;
     }
 }
+void set_wb_config_path(const std::string& path) {
+    std::lock_guard<std::mutex> l(g_lock);
+    g_wb_cfg_path = path;
+    load_wb_cfg_locked();
+}
 bool active() { return g_mode == 1 || (g_mode == 0 && !g_controller); }
 
 void event(const SDL_Event& e) {
@@ -592,6 +681,7 @@ void event(const SDL_Event& e) {
                 if (g.macro_id == mid) {
                     g.macro_id = 0;  // tap again to cancel active macro immediately
                 } else {
+                    if (mid == 1) load_wb_cfg_locked();
                     g.macro_id = mid;
                     g.macro_t0_ns = SDL_GetTicksNS();
                 }

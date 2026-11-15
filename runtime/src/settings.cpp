@@ -97,6 +97,9 @@ void load(const std::string& path) {
             fclose(f);
             LOG("settings: %s", path.c_str());
         }
+        auto slash = path.find_last_of("/\\");
+        std::string wb_path = (slash == std::string::npos) ? "wb_macro.ini" : path.substr(0, slash + 1) + "wb_macro.ini";
+        touch::set_wb_config_path(wb_path);
     }
     apply();
 }
