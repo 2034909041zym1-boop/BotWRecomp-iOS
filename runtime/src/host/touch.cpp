@@ -109,23 +109,26 @@ std::mutex g_lock;
 State g;
 
 struct WbTimings {
+    int version = 2;
     double zl_end = 70.0;       // 0..zl_end: ZL + fwd
     double hop_end = 140.0;     // zl_end..hop_end: ZL + X + fwd
     double round_end = 200.0;   // hop_end..round_end: L (drop round bomb) + fwd
     double fwd_end = 340.0;     // round_end..fwd_end: fwd only (clear ledge)
-    double zr_end = 376.0;      // fwd_end..zr_end: ZR tap (enter bullet time)
-    double up1_start = 480.0;   // up1_start..up1_end: BTN_UP (switch to square bomb)
-    double up1_end = 660.0;
-    double rx1_start = 540.0;   // rx1_start..rx1_end: rx = +1.0
-    double rx1_end = 630.0;
-    double sq_start = 780.0;    // sq_start..sq_end: L (drop square bomb)
-    double sq_end = 860.0;
-    double up2_start = 1200.0;  // up2_start..up2_end: BTN_UP (switch back to round bomb)
-    double up2_end = 1380.0;
-    double rx2_start = 1260.0;  // rx2_start..rx2_end: rx = -1.0
-    double rx2_end = 1350.0;
-    double det_start = 1500.0;  // det_start..det_end: L (detonate)
-    double det_end = 1580.0;
+    int zr_count = 3;           // number of quick ZR taps to reliably catch Bullet Time
+    double zr_dur = 36.0;       // duration of each ZR tap (ms)
+    double zr_gap = 44.0;       // gap between ZR taps (ms) -> 340..376, 420..456, 500..536
+    double up1_start = 600.0;   // up1_start..up1_end: BTN_UP (switch to square bomb)
+    double up1_end = 780.0;
+    double rx1_start = 660.0;   // rx1_start..rx1_end: rx = +1.0
+    double rx1_end = 750.0;
+    double sq_start = 900.0;    // sq_start..sq_end: L (drop square bomb)
+    double sq_end = 980.0;
+    double up2_start = 1320.0;  // up2_start..up2_end: BTN_UP (switch back to round bomb)
+    double up2_end = 1500.0;
+    double rx2_start = 1380.0;  // rx2_start..rx2_end: rx = -1.0
+    double rx2_end = 1470.0;
+    double det_start = 1620.0;  // det_start..det_end: L (detonate)
+    double det_end = 1700.0;
 };
 WbTimings g_wb;
 std::string g_wb_cfg_path;
@@ -135,23 +138,26 @@ void write_default_wb_cfg(const std::string& path) {
     if (!f) return;
     fprintf(f,
             "# Windbomb (WB) macro timings in milliseconds (hot-reloaded every WB tap)\n"
+            "version=2\n"
             "zl_end=70\n"
             "hop_end=140\n"
             "round_end=200\n"
             "fwd_end=340\n"
-            "zr_end=376\n"
-            "up1_start=480\n"
-            "up1_end=660\n"
-            "rx1_start=540\n"
-            "rx1_end=630\n"
-            "sq_start=780\n"
-            "sq_end=860\n"
-            "up2_start=1200\n"
-            "up2_end=1380\n"
-            "rx2_start=1260\n"
-            "rx2_end=1350\n"
-            "det_start=1500\n"
-            "det_end=1580\n");
+            "zr_count=3\n"
+            "zr_dur=36\n"
+            "zr_gap=44\n"
+            "up1_start=600\n"
+            "up1_end=780\n"
+            "rx1_start=660\n"
+            "rx1_end=750\n"
+            "sq_start=900\n"
+            "sq_end=980\n"
+            "up2_start=1320\n"
+            "up2_end=1500\n"
+            "rx2_start=1380\n"
+            "rx2_end=1470\n"
+            "det_start=1620\n"
+            "det_end=1700\n");
     fclose(f);
 }
 
@@ -163,6 +169,7 @@ void load_wb_cfg_locked() {
         return;
     }
     WbTimings w;
+    int file_ver = 0;
     char line[256];
     while (fgets(line, sizeof line, f)) {
         if (line[0] == '#' || line[0] == '\n' || line[0] == '\r') continue;
@@ -171,11 +178,14 @@ void load_wb_cfg_locked() {
         *eq = 0;
         const char* k = line;
         const double v = atof(eq + 1);
-        if (!strcmp(k, "zl_end")) w.zl_end = v;
+        if (!strcmp(k, "version")) file_ver = (int)v;
+        else if (!strcmp(k, "zl_end")) w.zl_end = v;
         else if (!strcmp(k, "hop_end")) w.hop_end = v;
         else if (!strcmp(k, "round_end")) w.round_end = v;
         else if (!strcmp(k, "fwd_end")) w.fwd_end = v;
-        else if (!strcmp(k, "zr_end")) w.zr_end = v;
+        else if (!strcmp(k, "zr_count")) w.zr_count = std::clamp((int)v, 1, 6);
+        else if (!strcmp(k, "zr_dur")) w.zr_dur = v;
+        else if (!strcmp(k, "zr_gap")) w.zr_gap = v;
         else if (!strcmp(k, "up1_start")) w.up1_start = v;
         else if (!strcmp(k, "up1_end")) w.up1_end = v;
         else if (!strcmp(k, "rx1_start")) w.rx1_start = v;
@@ -190,6 +200,11 @@ void load_wb_cfg_locked() {
         else if (!strcmp(k, "det_end")) w.det_end = v;
     }
     fclose(f);
+    if (file_ver < 2) {
+        write_default_wb_cfg(g_wb_cfg_path);
+        g_wb = WbTimings{};
+        return;
+    }
     g_wb = w;
 }
 
@@ -371,8 +386,14 @@ input::PadState contribution(float dt) {
                 if (t.ly < 0.8f) t.ly = 1.0f;
             } else if (ms < w.fwd_end) {
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < w.zr_end) {
-                t.buttons |= input::BTN_ZR;
+            } else if (ms < w.up1_start) {
+                for (int i = 0; i < w.zr_count; i++) {
+                    const double s0 = w.fwd_end + i * (w.zr_dur + w.zr_gap);
+                    if (ms >= s0 && ms < s0 + w.zr_dur) {
+                        t.buttons |= input::BTN_ZR;
+                        break;
+                    }
+                }
             } else if (ms >= w.up1_start && ms < w.up1_end) {
                 t.buttons |= input::BTN_UP;
                 if (ms >= w.rx1_start && ms < w.rx1_end) t.rx = 1.0f;
