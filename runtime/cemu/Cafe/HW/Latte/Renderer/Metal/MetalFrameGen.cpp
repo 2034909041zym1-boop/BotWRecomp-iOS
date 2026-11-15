@@ -271,6 +271,7 @@ bool MetalFrameGen::EnsurePipelines()
     if (m_psoInterpolate) return true;
     if (m_initFailed || !m_device) return false;
 
+    ScopedAutoreleasePool pool;
     NS::Error* error = nullptr;
     m_library = m_device->newLibrary(ToNSString(kFrameGenMSL), nullptr, &error);
     if (!m_library)
@@ -286,7 +287,6 @@ bool MetalFrameGen::EnsurePipelines()
         if (!fn) return nullptr;
         NS::Error* psoErr = nullptr;
         auto* pso = m_device->newComputePipelineState(fn, &psoErr);
-        fn->release();
         if (!pso)
         {
             cemuLog_log(LogType::Force, "MetalFrameGen: failed to create PSO {}: {}", name,
@@ -355,7 +355,7 @@ bool MetalFrameGen::EnsureTextures(uint32_t w, uint32_t h, bool isSRGB)
     const uint32_t w8 = std::max(1u, w4 / 2), h8 = std::max(1u, h4 / 2);
 
     auto makeTex = [&](MTL::PixelFormat fmt, uint32_t tw, uint32_t th, MTL::TextureUsage usage) -> MTL::Texture* {
-        NS_STACK_SCOPED auto* td = MTL::TextureDescriptor::texture2DDescriptor(fmt, tw, th, false);
+        auto* td = MTL::TextureDescriptor::texture2DDescriptor(fmt, tw, th, false);
         td->setStorageMode(MTL::StorageModePrivate);
         td->setUsage(usage);
         return m_device->newTexture(td);
@@ -397,6 +397,7 @@ bool MetalFrameGen::EnsureTextures(uint32_t w, uint32_t h, bool isSRGB)
 bool MetalFrameGen::Process(MTL::CommandBuffer* cmdBuf, MTL::Texture* srcTex, bool generate)
 {
     if (!cmdBuf || !srcTex) return false;
+    ScopedAutoreleasePool pool;
     const uint32_t w = (uint32_t)srcTex->width();
     const uint32_t h = (uint32_t)srcTex->height();
     if (w < 64 || h < 64) return false;
