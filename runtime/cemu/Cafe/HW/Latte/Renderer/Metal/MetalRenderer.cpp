@@ -538,7 +538,9 @@ bool MetalRenderer::FrameGenPrepare(LatteTextureView* texView, bool padView)
         return false;
 
     m_fgInterpolatedThisFrame = true;
-    m_fgDelaySec = std::clamp(dt * 0.48, 0.008, 0.019);
+    // Keep delay strictly below one 60Hz vsync (16.67ms) so CoreAnimation places
+    // the interpolated frame on V0 and the real frame on V1 instead of skipping to V2.
+    m_fgDelaySec = 0.010;
     return true;
 }
 

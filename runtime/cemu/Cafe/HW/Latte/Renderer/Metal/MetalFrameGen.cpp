@@ -157,8 +157,8 @@ kernel void fg_flow_refine(
     int2 bestD = int2(0, 0);
     float bestSad = patch_sad(prevLuma, currLuma, pos, bestD, w, h) * 0.93f;
 
-    for (int dy = -2; dy <= 2; dy++) {
-        for (int dx = -2; dx <= 2; dx++) {
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
             int2 d = guess + int2(dx, dy);
             if (d.x == 0 && d.y == 0) continue;
             float sad = patch_sad(prevLuma, currLuma, pos, d, w, h);
@@ -233,9 +233,10 @@ kernel void fg_interpolate(
     float4 c1 = currTex.sample(samp, uv1);
     float4 cCurr = currTex.sample(samp, uv);
 
-    // Guard against disocclusion double-images
+    // Guard against disocclusion double-images and static/zero-flow ghosting
+    float flowMag = length(flow.xy);
     float diff = dot(abs(c0.rgb - c1.rgb), float3(0.3333f));
-    float wWarp = conf * (1.0f - smoothstep(0.16f, 0.42f, diff));
+    float wWarp = (flowMag >= 0.35f) ? conf * (1.0f - smoothstep(0.05f, 0.14f, diff)) : 0.0f;
     float4 blended = 0.5f * (c0 + c1);
     float4 out = mix(cCurr, blended, wWarp);
 
@@ -440,7 +441,7 @@ bool MetalFrameGen::Process(MTL::CommandBuffer* cmdBuf, MTL::Texture* srcTex, bo
         enc->dispatchThreadgroups(grid, tg);
     };
 
-    FGParams p{w, h, w, h, w, h, isSRGB ? 1u : 0u, 0.22f};
+    FGParams p{w, h, w, h, w, h, isSRGB ? 1u : 0u, 0.09f};
 
     // 1. Copy srcTex into m_frameTex[curr]
     enc->setComputePipelineState(m_psoCopy);
