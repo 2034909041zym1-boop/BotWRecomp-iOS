@@ -272,30 +272,30 @@ input::PadState contribution(float dt) {
     }
     if (g.macro_id != 0) {
         const double ms = (SDL_GetTicksNS() - g.macro_t0_ns) * 1e-6;
-        if (g.macro_id == 1) {  // WB: Windbomb (ZL+forward -> ZL+X hop -> L round -> hold ZR bullet time -> Up+R square -> L -> Up+L round -> L detonate)
+        if (g.macro_id == 1) {  // WB: Windbomb (ZL+X hop -> L round -> tap ZR bullet time -> Up+R square -> L -> 350ms bullet-time wait -> Up+L round -> L detonate)
             if (ms < 60.0) {
                 t.buttons |= input::BTN_ZL;
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 130.0) {
+            } else if (ms < 140.0) {
                 t.buttons |= input::BTN_ZL | input::BTN_X;
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 190.0) {
+            } else if (ms >= 150.0 && ms < 210.0) {
                 t.buttons |= input::BTN_L;
-            } else if (ms >= 220.0 && ms < 760.0) {
-                // Keep ZR held to stay in Bullet Time until detonation
+            } else if (ms >= 230.0 && ms < 290.0) {
+                // Tap ZR (do not hold) to enter Bullet Time without blocking L
                 t.buttons |= input::BTN_ZR;
-                if (ms >= 280.0 && ms < 440.0) {
-                    t.buttons |= input::BTN_UP;
-                    if (ms >= 340.0) t.rx = 1.0f;
-                } else if (ms >= 470.0 && ms < 540.0) {
-                    t.buttons |= input::BTN_L;
-                } else if (ms >= 560.0 && ms < 720.0) {
-                    t.buttons |= input::BTN_UP;
-                    if (ms >= 620.0) t.rx = -1.0f;
-                }
-            } else if (ms >= 760.0 && ms < 840.0) {
+            } else if (ms >= 320.0 && ms < 500.0) {
+                t.buttons |= input::BTN_UP;
+                if (ms >= 390.0 && ms < 480.0) t.rx = 1.0f;
+            } else if (ms >= 530.0 && ms < 600.0) {
                 t.buttons |= input::BTN_L;
-            } else if (ms >= 840.0) {
+            } else if (ms >= 950.0 && ms < 1130.0) {
+                // 350ms unpaused Bullet Time gap above lets Square Bomb separate behind Link
+                t.buttons |= input::BTN_UP;
+                if (ms >= 1020.0 && ms < 1110.0) t.rx = -1.0f;
+            } else if (ms >= 1160.0 && ms < 1240.0) {
+                t.buttons |= input::BTN_L;
+            } else if (ms >= 1240.0) {
                 g.macro_id = 0;
             }
         } else if (g.macro_id == 2) {  // PR: Parry (ZL shield + A parry)
