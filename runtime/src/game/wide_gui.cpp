@@ -73,6 +73,7 @@ void scalePaneToRightSide(uint32_t p, uint32_t) {
 }
 void scalePaneReverse(uint32_t p, uint32_t) { sxs(p, gxs(p) * rar()); }
 void scalePaneOnYScale(uint32_t p, uint32_t) { sys(p, gys(p) * rar()); }
+void movePaneToLeftSide(uint32_t p, uint32_t) { sx(p, gx(p) + padLeft()); }
 void movePaneToRightSide(uint32_t p, uint32_t) { sx(p, gx(p) + padRight()); }
 void movePaneToRightSideAlt(uint32_t p, uint32_t) { sx(p, gx(p) + altPadRight()); }
 void scalePaneAndKeepPos(uint32_t p, uint32_t) {
@@ -145,18 +146,18 @@ void scaleTempMeterPanes(uint32_t p, uint32_t sz) {
 void scaleMainScreenWeatherPanes(uint32_t p, uint32_t sz) {
     if (isPane(p, "N_InOut_00")) scalePaneAndKeepPos(p, sz);
 }
-void scaleMainScreenInformationTextPanes(uint32_t p, uint32_t sz) {
-    if (isPane(p, "Pa_Information_00")) scalePaneNormal(p, sz);
+void scaleMainScreenInformationTextPanes(uint32_t, uint32_t) {
+    // Keep horizontal scale at 1.0: scaling this Capture/TextBox container clips/hides its text.
 }
-void scaleMainScreenLocationTextPanes(uint32_t p, uint32_t sz) {
-    if (isPane(p, "Pa_LocationName_00")) scalePaneNormal(p, sz);
+void scaleMainScreenLocationTextPanes(uint32_t, uint32_t) {
+    // Keep horizontal scale at 1.0: scaling this Capture/TextBox container clips/blurs its text.
 }
-void scaleMainScreenQuestTextPanes(uint32_t p, uint32_t sz) {
-    if (isPane(p, "Pa_QuestName_00")) scalePaneNormal(p, sz);
-    else if (isPane(p, "P_Base_01") || isPane(p, "P_Base_00")) scalePaneReverse(p, sz);
+void scaleMainScreenQuestTextPanes(uint32_t, uint32_t) {
+    // Keep horizontal scale at 1.0: scaling Pa_QuestName_00 hides T_QuestName_00 inside Pa_ChallengeMark_01.
 }
 void scaleMainScreenSmallLocationTextPanes(uint32_t p, uint32_t sz) {
-    if (isPane(p, "Pa_LocationNameS_00")) scalePaneToLeftSide(p, sz);
+    // Reposition to the left edge without horizontal scaling so Capture/TextBox glyphs are not clipped.
+    if (isPane(p, "Pa_LocationNameS_00")) movePaneToLeftSide(p, sz);
 }
 void scaleMainScreenBossGaugePanes(uint32_t p, uint32_t sz) {
     if (isPane(p, "N_All_00")) scalePaneNormal(p, sz);
@@ -191,7 +192,7 @@ void scaleMainScreenPanes(uint32_t p, uint32_t sz) {
 }
 
 void scaleMainDungeonPanes(uint32_t p, uint32_t sz) {
-    if (isPane(p, "Pa_LocationNameS_00")) scalePaneToLeftSide(p, sz);
+    if (isPane(p, "Pa_LocationNameS_00")) movePaneToLeftSide(p, sz);
     else if (isPane(p, "Pa_Message_00") || isPane(p, "Pa_Title_00")) scalePaneNormal(p, sz);
 }
 
@@ -240,8 +241,8 @@ void scaleMainScreen3DStaminaPanes(uint32_t p, uint32_t sz) {
 void scaleMainScreen3DBonusStaminaPanes(uint32_t p, uint32_t sz) {
     if (isPane(p, "N_Size_05")) scalePaneNormal(p, sz);
 }
-void scaleMainScreen3DPickupPanes(uint32_t p, uint32_t sz) {
-    if (isPane(p, "N_Capture_00") || isPane(p, "N_ModeItem_00")) scalePaneNormal(p, sz);
+void scaleMainScreen3DPickupPanes(uint32_t, uint32_t) {
+    // Keep horizontal scale at 1.0: scaling N_Capture_00/N_ModeItem_00 hides T_Name_00.
 }
 void scaleMainScreen3DEnemyNoticePanes(uint32_t p, uint32_t sz) {
     if (isPane(p, "N_Change_00") || isPane(p, "N_Change_01")) scalePaneNormal(p, sz);
