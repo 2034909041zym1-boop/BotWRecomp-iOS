@@ -20,6 +20,7 @@ struct DrawState {
     bool collapsed = false;  // only the show / hide button (items has just that)
     float w = 0, h = 0;  // layout space = drawable pixels when the layout was made
     float u = 1;         // pixels per design point
+    float alpha = 0.75f; // virtual control opacity (0.25..1.0)
     std::vector<DrawItem> items;
     // floating left stick: home ring while idle, base + knob while held
     float home_x = 0, home_y = 0, stick_r = 0;

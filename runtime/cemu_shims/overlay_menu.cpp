@@ -176,6 +176,8 @@ void LatteOverlay_render(bool padView) {
         ImGui::Spacing();
         ImGui::Separator();
 
+        const float list_h = std::min(io.DisplaySize.y * 0.62f, 430.0f * ui);
+        ImGui::BeginChild("##menu_rows", {row_w + 18.0f * ui, list_h}, false);
         for (int i = 0; i < (int)v.rows.size(); i++) {
             const menu::Row& r = v.rows[i];
             if (r.section) {
@@ -214,6 +216,7 @@ void LatteOverlay_render(bool padView) {
             }
             ImGui::PopID();
         }
+        ImGui::EndChild();
 
         ImGui::Spacing();
         ImGui::Separator();

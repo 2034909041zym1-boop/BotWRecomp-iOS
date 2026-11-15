@@ -24,8 +24,9 @@ void save_locked() {
     FILE* f = fopen(g_path.c_str(), "w");
     if (!f) return;
     fprintf(f, "# BotWRecomp settings (also editable from the in-game menu: touchpad, L3+R3 or F1)\n");
-    fprintf(f, "fps=%d\nscale=%g\ndisplay=%d\nfilter=%d\naa=%d\ngyro=%d\nrumble=%d\nlayout=%d\nshow_fps=%d\nvolume=%d\ntouch=%d\ntouch_hidden=%d\n", g_s.fps,
-            g_s.scale, g_s.display, g_s.filter, g_s.aa, g_s.gyro, g_s.rumble, g_s.layout, g_s.show_fps, g_s.volume, g_s.touch, g_s.touch_hidden);
+    fprintf(f, "fps=%d\nscale=%g\ndisplay=%d\nfilter=%d\naa=%d\ngyro=%d\nrumble=%d\nlayout=%d\nshow_fps=%d\nvolume=%d\ntouch=%d\ntouch_hidden=%d\nstick_fixed=%d\nlook_sens=%g\nlook_accel=%d\ntouch_alpha=%d\nmacro_btns=%d\n", g_s.fps,
+            g_s.scale, g_s.display, g_s.filter, g_s.aa, g_s.gyro, g_s.rumble, g_s.layout, g_s.show_fps, g_s.volume, g_s.touch, g_s.touch_hidden,
+            g_s.stick_fixed, g_s.look_sens, g_s.look_accel, g_s.touch_alpha, g_s.macro_btns);
     fclose(f);
 }
 }  // namespace
@@ -47,6 +48,10 @@ void apply() {
     audio::set_volume(s.volume / 100.0f);
     touch::set_mode(s.touch);
     touch::set_hidden(s.touch_hidden);
+    touch::set_stick_fixed(s.stick_fixed != 0);
+    touch::set_look_params(s.look_sens, s.look_accel != 0);
+    touch::set_alpha(s.touch_alpha / 100.0f);
+    touch::set_macro_buttons(s.macro_btns != 0);
 }
 
 void set(const Settings& s, bool save) {
@@ -81,6 +86,11 @@ void load(const std::string& path) {
                 else if (!strcmp(line, "volume")) g_s.volume = atoi(v);
                 else if (!strcmp(line, "touch")) g_s.touch = atoi(v);
                 else if (!strcmp(line, "touch_hidden")) g_s.touch_hidden = atoi(v) != 0;
+                else if (!strcmp(line, "stick_fixed")) g_s.stick_fixed = atoi(v) != 0 ? 1 : 0;
+                else if (!strcmp(line, "look_sens")) g_s.look_sens = std::clamp((float)atof(v), 0.5f, 4.0f);
+                else if (!strcmp(line, "look_accel")) g_s.look_accel = atoi(v) != 0 ? 1 : 0;
+                else if (!strcmp(line, "touch_alpha")) g_s.touch_alpha = std::clamp(atoi(v), 25, 100);
+                else if (!strcmp(line, "macro_btns")) g_s.macro_btns = atoi(v) != 0 ? 1 : 0;
             }
             fclose(f);
             LOG("settings: %s", path.c_str());

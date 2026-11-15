@@ -16,15 +16,24 @@ constexpr float kPi = 3.14159265f, kDeg = kPi / 180.0f;
 struct Look {
     ImU32 fill, line, text;
 };
-Look look(bool pressed) {
-    if (pressed) return {IM_COL32(255, 255, 255, 150), IM_COL32(255, 255, 255, 230), IM_COL32(18, 18, 22, 235)};
-    return {IM_COL32(12, 12, 16, 70), IM_COL32(255, 255, 255, 95), IM_COL32(255, 255, 255, 175)};
+int scale_a(int a, float factor) {
+    return std::clamp((int)(a * factor + 0.5f), 0, 255);
+}
+Look look(bool pressed, float alpha = 1.0f) {
+    if (pressed)
+        return {IM_COL32(255, 255, 255, scale_a(150, alpha)), IM_COL32(255, 255, 255, scale_a(230, alpha)),
+                IM_COL32(18, 18, 22, scale_a(235, alpha))};
+    return {IM_COL32(12, 12, 16, scale_a(70, alpha)), IM_COL32(255, 255, 255, scale_a(95, alpha)),
+            IM_COL32(255, 255, 255, scale_a(175, alpha))};
 }
 
 float glyph_width(char c) {
     switch (c) {
         case 'A': return 0.64f;
         case 'B': return 0.53f;
+        case 'P': return 0.52f;
+        case 'T': return 0.56f;
+        case 'W': return 0.74f;
         case 'X': return 0.58f;
         case 'Y': return 0.60f;
         case 'L': return 0.46f;
@@ -50,6 +59,16 @@ void glyph(ImDrawList* dl, char c, float x, float y, float s, ImU32 col, float t
         case 'B':
             to(0, 0.5f), to(0, 0), arc(0.25f, 0.25f, 0.25f, -90, 90), to(0, 0.5f), stroke();
             to(0, 0.5f), arc(0.28f, 0.75f, 0.25f, -90, 90), to(0, 1), to(0, 0.5f), stroke();
+            break;
+        case 'P':
+            to(0, 1), to(0, 0), arc(0.25f, 0.25f, 0.25f, -90, 90), to(0, 0.5f), stroke();
+            break;
+        case 'T':
+            to(0, 0), to(0.56f, 0), stroke();
+            to(0.28f, 0), to(0.28f, 1), stroke();
+            break;
+        case 'W':
+            to(0, 0), to(0.18f, 1), to(0.37f, 0.35f), to(0.56f, 1), to(0.74f, 0), stroke();
             break;
         case 'X': to(0, 0), to(0.58f, 1), stroke(); to(0.58f, 0), to(0, 1), stroke(); break;
         case 'Y': to(0, 0), to(0.3f, 0.5f), to(0.6f, 0), stroke(); to(0.3f, 0.5f), to(0.3f, 1), stroke(); break;
@@ -89,10 +108,14 @@ void draw() {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     auto P = [&](float x, float y) { return ImVec2(x * k, y * k); };
 
+    const float alpha = std::clamp(st.alpha, 0.2f, 1.0f);
+    const float nav_alpha = std::max(alpha, 0.40f);  // keep menu & eye buttons discoverable even at low opacity
     for (const DrawItem& it : st.items) {
         const ImVec2 c = P(it.x, it.y);
         const float r = it.r * k;
-        const Look lk = look(it.pressed);
+        const bool is_nav = (it.shape == DrawItem::kMenu || it.shape == DrawItem::kToggle);
+        const float item_alpha = is_nav ? nav_alpha : alpha;
+        const Look lk = look(it.pressed, item_alpha);
         switch (it.shape) {
             case DrawItem::kCircle:
                 dl->AddCircleFilled(c, r, lk.fill);
@@ -129,7 +152,7 @@ void draw() {
                 break;
             }
             case DrawItem::kDPad: {
-                const Look base = look(false);
+                const Look base = look(false, alpha);
                 dl->AddCircleFilled(c, r, base.fill);
                 dl->AddCircle(c, r, base.line, 0, lw);
                 const struct {
@@ -138,7 +161,7 @@ void draw() {
                 } dirs[] = {{input::BTN_UP, 0, -1}, {input::BTN_DOWN, 0, 1}, {input::BTN_LEFT, -1, 0}, {input::BTN_RIGHT, 1, 0}};
                 for (auto& d : dirs) {
                     const bool on = (it.dpad & d.bit) != 0;
-                    const Look lk2 = look(on);
+                    const Look lk2 = look(on, alpha);
                     const ImVec2 at(c.x + d.dx * r * 0.6f, c.y + d.dy * r * 0.6f);
                     if (on) dl->AddCircleFilled(at, r * 0.36f, lk2.fill);
                     const float t = r * 0.17f;  // arrow pointing outwards
@@ -160,21 +183,21 @@ void draw() {
         ImVec2 kn = P(st.knob_x, st.knob_y);
         const float dx = kn.x - b.x, dy = kn.y - b.y, m = std::sqrt(dx * dx + dy * dy);
         if (m > sr) kn = ImVec2(b.x + dx / m * sr, b.y + dy / m * sr);
-        dl->AddCircleFilled(b, sr, IM_COL32(12, 12, 16, 60));
-        dl->AddCircle(b, sr, IM_COL32(255, 255, 255, 120), 0, lw);
-        dl->AddCircleFilled(kn, kr, IM_COL32(255, 255, 255, 130));
-        dl->AddCircle(kn, kr, IM_COL32(255, 255, 255, 230), 0, lw);
+        dl->AddCircleFilled(b, sr, IM_COL32(12, 12, 16, scale_a(60, alpha)));
+        dl->AddCircle(b, sr, IM_COL32(255, 255, 255, scale_a(120, alpha)), 0, lw);
+        dl->AddCircleFilled(kn, kr, IM_COL32(255, 255, 255, scale_a(130, alpha)));
+        dl->AddCircle(kn, kr, IM_COL32(255, 255, 255, scale_a(230, alpha)), 0, lw);
     } else {
         const ImVec2 h = P(st.home_x, st.home_y);
-        dl->AddCircle(h, sr, IM_COL32(255, 255, 255, 60), 0, lw);
-        dl->AddCircleFilled(h, kr, IM_COL32(12, 12, 16, 50));
-        dl->AddCircle(h, kr, IM_COL32(255, 255, 255, 80), 0, lw);
+        dl->AddCircle(h, sr, IM_COL32(255, 255, 255, scale_a(60, alpha)), 0, lw);
+        dl->AddCircleFilled(h, kr, IM_COL32(12, 12, 16, scale_a(50, alpha)));
+        dl->AddCircle(h, kr, IM_COL32(255, 255, 255, scale_a(80, alpha)), 0, lw);
     }
     // camera finger
     if (st.look) {
         const ImVec2 p = P(st.look_x, st.look_y);
-        dl->AddCircle(p, 26 * u, IM_COL32(255, 255, 255, 80), 0, lw);
-        dl->AddCircleFilled(p, 4 * u, IM_COL32(255, 255, 255, 110));
+        dl->AddCircle(p, 26 * u, IM_COL32(255, 255, 255, scale_a(80, alpha)), 0, lw);
+        dl->AddCircleFilled(p, 4 * u, IM_COL32(255, 255, 255, scale_a(110, alpha)));
     }
 }
 }  // namespace touch

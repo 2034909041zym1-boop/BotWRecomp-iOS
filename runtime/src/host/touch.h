@@ -10,6 +10,10 @@ namespace touch {
 void set_mode(int mode);              // 0 auto (shown while no controller is connected), 1 on, 2 off
 void set_controller_connected(bool connected);
 void set_hidden(bool hidden);          // collapsed: only the show/hide button is shown and live
+void set_stick_fixed(bool fixed);
+void set_look_params(float sens, bool accel);
+void set_alpha(float alpha);
+void set_macro_buttons(bool show);
 bool active();                        // controls currently shown and live
 void event(const SDL_Event& e);       // SDL_EVENT_FINGER_* (host main thread)
 void apply(input::PadState& s);       // add virtual buttons / sticks (host main thread, every loop)

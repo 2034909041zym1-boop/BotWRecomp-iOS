@@ -24,6 +24,11 @@ struct Settings {
     int volume = 100;      // percent
     int touch = 0;         // on-screen controls: 0 auto (while no controller), 1 on, 2 off
     bool touch_hidden = false;  // collapsed to the show/hide button (that button toggles it)
+    int stick_fixed = 1;   // 1 = fixed left stick base, 0 = floating (follows thumb)
+    float look_sens = 1.6f;// right-half camera drag sensitivity multiplier
+    int look_accel = 1;    // 1 = mild non-linear camera acceleration, 0 = linear
+    int touch_alpha = 75;  // virtual button opacity percent (25..100)
+    int macro_btns = 1;    // 1 = show quick macro buttons (WB / PR / BT), 0 = hide
 };
 
 namespace settings {

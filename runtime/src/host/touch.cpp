@@ -59,6 +59,11 @@ constexpr SDL_TouchID kTestTouch = 0x70C4E57;  // synthetic BOTW_TOUCH_TEST even
 std::atomic<int> g_mode{0};
 std::atomic<bool> g_controller{false};
 std::atomic<bool> g_hidden{false};
+std::atomic<bool> g_stick_fixed{true};
+std::atomic<float> g_look_sens{1.6f};
+std::atomic<bool> g_look_accel{true};
+std::atomic<float> g_alpha{0.75f};
+std::atomic<bool> g_macro_btns{true};
 #if defined(__APPLE__) && TARGET_OS_IOS
 std::atomic<bool> g_touchscreen{true};
 #else
@@ -78,6 +83,7 @@ struct Control {
     DrawItem d;
     uint32_t mask = 0;
     bool dpad = false, menu = false, toggle = false;
+    uint8_t macro_id = 0;  // 0 none, 1 WB (windbomb), 2 PR (parry), 3 BT (bullet time)
 };
 struct State {
     float w = 0, h = 0, density = 0, safe[4] = {-1, -1, -1, -1};
@@ -92,6 +98,8 @@ struct State {
     SDL_FingerID look_id = 0;
     float lpx = 0, lpy = 0;  // look finger at the previous apply()
     float vx = 0, vy = 0;    // smoothed look velocity, pt/s
+    uint8_t macro_id = 0;
+    uint64_t macro_t0_ns = 0;
     uint64_t last_ns = 0;
     bool visible = false;
     input::PadState out;  // our contribution in the last apply()
@@ -111,6 +119,7 @@ void release_all() {
     g.fingers.clear();
     g.stick = g.look = false;
     g.vx = g.vy = 0;
+    g.macro_id = 0;
 }
 
 void add(DrawItem::Shape shape, float x, float y, float r, float hh, const char* label, uint32_t mask,
@@ -164,6 +173,16 @@ void update_layout() {
     add(DrawItem::kCircle, W * 0.5f + 62 * u, ty, sr, 0, "+", input::BTN_PLUS);
     add(DrawItem::kToggle, W * 0.5f + 124 * u, ty, 14 * u, 0, "", 0);  // show / hide the controls
     g.ctrls.back().toggle = true;
+    // quick macro buttons in the top-right clear gap between eye toggle and ZR/R
+    {
+        const float mw = 19 * u, mh = 13 * u, mgap = 6 * u;
+        const float mx0 = W * 0.5f + 178 * u;
+        const char* mlabels[3] = {"WB", "PR", "BT"};
+        for (uint8_t mi = 0; mi < 3; mi++) {
+            add(DrawItem::kPill, mx0 + mi * (2 * mw + mgap), ty, mw, mh, mlabels[mi], 0);
+            g.ctrls.back().macro_id = mi + 1;
+        }
+    }
     // D-pad on the left, under L, above the stick area
     const float dr = 40 * u;
     add(DrawItem::kDPad, L + m + dr + 4 * u, T + m + 4 * ph + gap + 16 * u + dr, dr, 0, "", 0, true);
@@ -183,6 +202,7 @@ int hit(float x, float y) {
     int best = -1;
     float best_score = 1e9f;
     for (int i = 0; i < (int)g.ctrls.size(); i++) {
+        if (!g_macro_btns && g.ctrls[i].macro_id != 0) continue;
         const DrawItem& d = g.ctrls[i].d;
         float score;
         if (d.shape == DrawItem::kPill) {
@@ -208,11 +228,13 @@ uint32_t dpad_dir(const DrawItem& d, float x, float y) {
     return dy > 0 ? input::BTN_DOWN : input::BTN_UP;
 }
 
-void stick_to(float x, float y) {  // the base follows a thumb that leaves the ring
-    float dx = x - g.bx, dy = y - g.by, m = hypotf(dx, dy);
-    if (m > g.stick_r) {
-        g.bx = x - dx / m * g.stick_r;
-        g.by = y - dy / m * g.stick_r;
+void stick_to(float x, float y) {  // fixed base or floating base depending on setting
+    if (!g_stick_fixed || g_test) {
+        float dx = x - g.bx, dy = y - g.by, m = hypotf(dx, dy);
+        if (m > g.stick_r) {
+            g.bx = x - dx / m * g.stick_r;
+            g.by = y - dy / m * g.stick_r;
+        }
     }
     g.kx = x, g.ky = y;
 }
@@ -238,10 +260,40 @@ input::PadState contribution(float dt) {
             g.vy += (dy / dt - g.vy) * a;
             float sp = hypotf(g.vx, g.vy);
             if (sp > kLookRest) {
-                float o = kLookFloor + (1 - kLookFloor) * std::min(1.0f, (sp - kLookRest) / (kLookFullSpeed - kLookRest));
+                const float sens = std::clamp(g_look_sens.load(), 0.5f, 4.0f);
+                const float full_speed = std::max(kLookRest + 40.0f, kLookFullSpeed / sens);
+                float o = std::clamp((sp - kLookRest) / (full_speed - kLookRest), 0.0f, 1.0f);
+                if (g_look_accel.load()) o = o * (0.72f + 0.28f * o);
+                o = kLookFloor + (1.0f - kLookFloor) * o;
                 t.rx = g.vx / sp * o;
                 t.ry = -g.vy / sp * o;
             }
+        }
+    }
+    if (g.macro_id != 0) {
+        const double ms = (SDL_GetTicksNS() - g.macro_t0_ns) * 1e-6;
+        if (g.macro_id == 1) {  // WB: Windbomb (ZL+X forward jump -> L round bomb -> ZR bullet time -> Up+R square -> L -> Up+L -> L detonate)
+            if (ms < 90.0) { t.buttons |= input::BTN_ZL | input::BTN_X; if (t.ly < 0.8f) t.ly = 1.0f; }
+            else if (ms < 150.0) { t.buttons |= input::BTN_L; }
+            else if (ms >= 170.0 && ms < 250.0) { t.buttons |= input::BTN_ZR; }
+            else if (ms >= 250.0 && ms < 380.0) { t.buttons |= input::BTN_UP; t.rx = 1.0f; }
+            else if (ms >= 400.0 && ms < 470.0) { t.buttons |= input::BTN_L; }
+            else if (ms >= 490.0 && ms < 610.0) { t.buttons |= input::BTN_UP; t.rx = -1.0f; }
+            else if (ms >= 640.0 && ms < 730.0) { t.buttons |= input::BTN_L; }
+            else if (ms >= 730.0) { g.macro_id = 0; }
+        } else if (g.macro_id == 2) {  // PR: Parry (ZL shield + A parry)
+            if (ms < 180.0) {
+                t.buttons |= input::BTN_ZL;
+                if (ms >= 60.0 && ms < 160.0) t.buttons |= input::BTN_A;
+            } else {
+                g.macro_id = 0;
+            }
+        } else if (g.macro_id == 3) {  // BT: Bullet Time (X jump -> ZR draw bow)
+            if (ms < 90.0) { t.buttons |= input::BTN_X; }
+            else if (ms >= 110.0 && ms < 420.0) { t.buttons |= input::BTN_ZR; }
+            else if (ms >= 420.0) { g.macro_id = 0; }
+        } else {
+            g.macro_id = 0;
         }
     }
     return t;
@@ -464,6 +516,19 @@ void test_tick() {
 void set_mode(int mode) { g_mode = mode; }
 void set_controller_connected(bool c) { g_controller = c; }
 void set_hidden(bool h) { g_hidden = h; }
+void set_stick_fixed(bool fixed) { g_stick_fixed = fixed; }
+void set_look_params(float sens, bool accel) {
+    g_look_sens = std::clamp(sens, 0.5f, 4.0f);
+    g_look_accel = accel;
+}
+void set_alpha(float alpha) { g_alpha = std::clamp(alpha, 0.2f, 1.0f); }
+void set_macro_buttons(bool show) {
+    g_macro_btns = show;
+    if (!show) {
+        std::lock_guard<std::mutex> l(g_lock);
+        g.macro_id = 0;
+    }
+}
 bool active() { return g_mode == 1 || (g_mode == 0 && !g_controller); }
 
 void event(const SDL_Event& e) {
@@ -501,11 +566,25 @@ void event(const SDL_Event& e) {
                 settings::set(s);  // -> set_hidden()
                 LOG("touch: controls %s", s.touch_hidden ? "hidden" : "shown");
             }
+            if (g.ctrls[c].macro_id != 0) {
+                const uint8_t mid = g.ctrls[c].macro_id;
+                if (g.macro_id == mid) {
+                    g.macro_id = 0;  // tap again to cancel active macro immediately
+                } else {
+                    g.macro_id = mid;
+                    g.macro_t0_ns = SDL_GetTicksNS();
+                }
+            }
         } else if (x < g.w * 0.5f) {
             if (g.stick) return;  // one stick finger at a time
             n.role = kStick;
             g.stick = true, g.stick_id = f.fingerID;
-            g.bx = g.kx = x, g.by = g.ky = y;
+            if (g_stick_fixed && !g_test) {
+                g.bx = g.home_x, g.by = g.home_y;
+                g.kx = x, g.ky = y;
+            } else {
+                g.bx = g.kx = x, g.by = g.ky = y;
+            }
         } else {
             if (g.look) return;
             n.role = kLook;
@@ -541,12 +620,15 @@ void apply(input::PadState& s) {
     const float gap = g.last_ns ? (now - g.last_ns) * 1e-9f : 1.0f;
     const float dt = std::clamp(gap, 0.0005f, 0.1f);
     g.last_ns = now;
-    if (gap > 0.1f && g.look)  // first loop after a pause (settings menu was open): no velocity spike
-        if (const Finger* f = find(g.look_id)) g.lpx = f->x, g.lpy = f->y, g.vx = g.vy = 0;
+    if (gap > 0.1f) {
+        g.macro_id = 0;  // cancel any running macro if paused (menu open / app backgrounded)
+        if (g.look)      // first loop after a pause: no velocity spike
+            if (const Finger* f = find(g.look_id)) g.lpx = f->x, g.lpy = f->y, g.vx = g.vy = 0;
+    }
     static bool was_hidden = false;
     if (g_hidden != was_hidden) {
         was_hidden = g_hidden;
-        if (was_hidden) g.stick = g.look = false, g.vx = g.vy = 0;
+        if (was_hidden) g.stick = g.look = false, g.vx = g.vy = 0, g.macro_id = 0;
     }
     if (!vis || g_hidden) {
         g.out = {};
@@ -566,14 +648,34 @@ DrawState draw_state() {
     DrawState d;
     d.visible = g.visible && g.w > 0;
     if (!d.visible) return d;
-    d.w = g.w, d.h = g.h, d.u = g.u;
+    d.w = g.w, d.h = g.h, d.u = g.u, d.alpha = g_alpha.load();
     d.items.reserve(g.ctrls.size());
-    for (auto& c : g.ctrls) d.items.push_back(c.d);
+    for (auto& c : g.ctrls) {
+        if (!g_macro_btns && c.macro_id != 0) continue;
+        d.items.push_back(c.d);
+    }
     for (auto& f : g.fingers)
         if (f.role == kCtrl) {
-            d.items[f.ctrl].pressed = true;
-            d.items[f.ctrl].dpad |= f.dir;
+            if (!g_macro_btns && g.ctrls[f.ctrl].macro_id != 0) continue;
+            // find matching index in filtered d.items
+            size_t di = 0;
+            for (int ci = 0; ci < f.ctrl; ci++)
+                if (g_macro_btns || g.ctrls[ci].macro_id == 0) di++;
+            if (di < d.items.size()) {
+                d.items[di].pressed = true;
+                d.items[di].dpad |= f.dir;
+            }
         }
+    if (g.macro_id != 0 && g_macro_btns) {
+        size_t di = 0;
+        for (size_t ci = 0; ci < g.ctrls.size(); ci++) {
+            if (g.ctrls[ci].macro_id == g.macro_id && di < d.items.size()) {
+                d.items[di].pressed = true;
+                break;
+            }
+            if (g_macro_btns || g.ctrls[ci].macro_id == 0) di++;
+        }
+    }
     if (g_hidden) {  // just the eye button
         for (size_t i = 0; i < g.ctrls.size(); i++)
             if (g.ctrls[i].toggle) d.items = {d.items[i]};

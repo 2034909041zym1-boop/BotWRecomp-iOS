@@ -16,8 +16,14 @@ std::mutex g_lock;
 std::atomic<bool> g_open{false};
 int g_cursor = 0;
 
-enum RowId { kFps, kScale, kAA, kFilter, kDisplay, kShowFps, kGyro, kRumble, kLayout, kTouch, kVolume, kClose, kRows };
+enum RowId {
+    kFps, kScale, kAA, kFilter, kDisplay, kShowFps,
+    kGyro, kRumble, kLayout, kTouch, kStickFixed, kLookSens, kLookAccel, kTouchAlpha, kMacroBtns,
+    kVolume, kClose, kRows
+};
 const float kScales[] = {0, 0.5f, 0.75f, 0.8f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the display
+const float kLookSens[] = {1.0f, 1.3f, 1.6f, 2.0f, 2.5f, 3.0f};
+const int kTouchAlphas[] = {25, 50, 75, 100};
 const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (裁剪)", "宽屏 hor+ (重启后生效)"};
 const char* kFilters[] = {"双线性 (Bilinear)", "双三次 (Bicubic)", "埃尔米特 (Hermite)", "邻近采样 (Nearest)"};
 const char* kAAModes[] = {"关闭 (原生)", "FXAA 抗锯齿", "FXAA + CAS 锐化", "CAS 锐化 (无模糊)"};
@@ -48,6 +54,23 @@ void step(Settings& s, int row, int dir) {
         case kRumble: s.rumble = !s.rumble; break;
         case kLayout: s.layout = !s.layout; break;
         case kTouch: s.touch = wrap(s.touch + dir, 3), s.touch_hidden = false; break;
+        case kStickFixed: s.stick_fixed = s.stick_fixed ? 0 : 1; break;
+        case kLookSens: {
+            int i = 2;
+            for (int k = 0; k < (int)std::size(kLookSens); k++)
+                if (fabsf(kLookSens[k] - s.look_sens) < 0.05f) i = k;
+            s.look_sens = kLookSens[wrap(i + dir, (int)std::size(kLookSens))];
+            break;
+        }
+        case kLookAccel: s.look_accel = s.look_accel ? 0 : 1; break;
+        case kTouchAlpha: {
+            int i = 2;
+            for (int k = 0; k < (int)std::size(kTouchAlphas); k++)
+                if (kTouchAlphas[k] == s.touch_alpha) i = k;
+            s.touch_alpha = kTouchAlphas[wrap(i + dir, (int)std::size(kTouchAlphas))];
+            break;
+        }
+        case kMacroBtns: s.macro_btns = s.macro_btns ? 0 : 1; break;
         case kShowFps: s.show_fps = wrap(s.show_fps + dir, 3); break;
         case kVolume: s.volume = std::clamp(s.volume + dir * 10, 0, 100); break;
     }
@@ -152,6 +175,13 @@ View view() {
     v.rows[kRumble] = {"手柄震动", s.rumble ? "开启" : "关闭"};
     v.rows[kLayout] = {"按键布局", s.layout ? "Xbox (A在下)" : "任天堂 (A在右)"};
     v.rows[kTouch] = {"虚拟按键", s.touch == 1 ? "常开" : s.touch == 2 ? "关闭" : "自动 (连手柄隐藏)"};
+    v.rows[kStickFixed] = {"左摇杆模式", s.stick_fixed ? "固定位置 (推荐)" : "跟随手指"};
+    snprintf(b, sizeof b, "%gx", s.look_sens);
+    v.rows[kLookSens] = {"视角灵敏度", b};
+    v.rows[kLookAccel] = {"视角非线性加速", s.look_accel ? "开启 (慢稳快甩)" : "关闭 (线性)"};
+    snprintf(b, sizeof b, "%d%%", s.touch_alpha);
+    v.rows[kTouchAlpha] = {"按键透明度", b};
+    v.rows[kMacroBtns] = {"快捷宏按钮", s.macro_btns ? "显示 (风弹/盾反/林克)" : "隐藏"};
     snprintf(b, sizeof b, "%d%%", s.volume);
     v.rows[kVolume] = {"游戏音量", b};
     v.rows[kClose] = {"关闭设置菜单", "", true};
