@@ -588,8 +588,15 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
                                                shader == RendererOutputShader::s_hermit_shader_ud ||
                                                shader == RendererOutputShader::s_fxaa_shader_ud ||
                                                shader == RendererOutputShader::s_fxaa_cas_shader_ud);
+                    const bool isFxaaOrCas = (shader == RendererOutputShader::s_fxaa_shader ||
+                                              shader == RendererOutputShader::s_fxaa_shader_ud ||
+                                              shader == RendererOutputShader::s_fxaa_cas_shader ||
+                                              shader == RendererOutputShader::s_fxaa_cas_shader_ud);
                     presentTexture = m_spatialScalerOutput;
-                    shader = isUpsideDown ? RendererOutputShader::s_copy_shader_ud : RendererOutputShader::s_copy_shader;
+                    if (!isFxaaOrCas)
+                    {
+                        shader = isUpsideDown ? RendererOutputShader::s_copy_shader_ud : RendererOutputShader::s_copy_shader;
+                    }
                     useLinearTexFilter = false;
                 }
             }
