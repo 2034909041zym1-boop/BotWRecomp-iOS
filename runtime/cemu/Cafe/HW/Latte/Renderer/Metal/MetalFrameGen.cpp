@@ -304,8 +304,8 @@ bool MetalFrameGen::EnsurePipelines()
     m_psoInterpolate = makePSO("fg_interpolate");
 
     NS_STACK_SCOPED auto* sampDesc = MTL::SamplerDescriptor::alloc()->init();
-    sampDesc->setMinFilter(MTL::SamplerMinFilterLinear);
-    sampDesc->setMagFilter(MTL::SamplerMagFilterLinear);
+    sampDesc->setMinFilter(MTL::SamplerMinMagFilterLinear);
+    sampDesc->setMagFilter(MTL::SamplerMinMagFilterLinear);
     sampDesc->setSAddressMode(MTL::SamplerAddressModeClampToEdge);
     sampDesc->setTAddressMode(MTL::SamplerAddressModeClampToEdge);
     m_linearSampler = m_device->newSamplerState(sampDesc);
