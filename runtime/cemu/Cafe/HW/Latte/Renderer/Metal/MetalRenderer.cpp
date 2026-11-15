@@ -519,6 +519,8 @@ bool MetalRenderer::FrameGenPrepare(LatteTextureView* texView, bool padView)
     {
         if (m_frameGen) m_frameGen->ResetHistory();
         m_fgLastNs = 0;
+        m_fgSmoothDt = 0.033;
+        m_fgBudget = 0.0;
         return false;
     }
 
@@ -527,8 +529,31 @@ bool MetalRenderer::FrameGenPrepare(LatteTextureView* texView, bool padView)
     const double dt = m_fgLastNs ? (nowNs - m_fgLastNs) * 1e-9 : 0.0;
     m_fgLastNs = nowNs;
 
-    // Skip interpolation if already running >= ~50 FPS or after a long pause/loading screen
-    const bool allowGen = (dt >= 0.020 && dt <= 0.25);
+    bool allowGen = false;
+    if (dt >= 0.004 && dt <= 0.25)
+    {
+        m_fgSmoothDt = 0.7 * m_fgSmoothDt + 0.3 * dt;
+        const double nativeFps = 1.0 / std::max(m_fgSmoothDt, 0.004);
+        if (nativeFps < 52.0)
+        {
+            // Plan B: deficit accumulator toward 60 FPS (e.g. 40 native -> +20 interp; 30 native -> +30 interp)
+            const double deficit = std::clamp((60.0 / nativeFps) - 1.0, 0.0, 1.0);
+            m_fgBudget += deficit;
+            if (m_fgBudget >= 1.0)
+            {
+                m_fgBudget -= 1.0;
+                allowGen = true;
+            }
+        }
+        else
+        {
+            m_fgBudget = 0.0;
+        }
+    }
+    else
+    {
+        m_fgBudget = 0.0;
+    }
 
     if (!m_frameGen)
         m_frameGen = new MetalFrameGen(m_device);
@@ -539,9 +564,8 @@ bool MetalRenderer::FrameGenPrepare(LatteTextureView* texView, bool padView)
         return false;
 
     m_fgInterpolatedThisFrame = true;
-    // Keep delay strictly below one 60Hz vsync (16.67ms) so CoreAnimation places
-    // the interpolated frame on V0 and the real frame on V1 instead of skipping to V2.
-    m_fgDelaySec = 0.010;
+    // 7ms keeps real frame after interp frame without skipping an extra 120Hz (8.33ms) or 60Hz (16.67ms) vsync.
+    m_fgDelaySec = 0.007;
     return true;
 }
 
@@ -552,7 +576,7 @@ void MetalRenderer::DrawBackbufferQuadInterpolated(RendererOutputShader* shader,
     if (!m_frameGen || !m_frameGen->GetInterpTexture())
         return;
     DrawBackbufferTexture(m_frameGen->GetInterpTexture(), shader, useLinearTexFilter,
-                          imageX, imageY, imageWidth, imageHeight, padView, clearBackground);
+                          imageX, imageY, imageWidth, imageHeight, padView, clearBackground, false);
 }
 
 void MetalRenderer::FrameGenPresentInterpolated(bool mainWindow)
@@ -579,7 +603,7 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 
 void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, RendererOutputShader* shader, bool useLinearTexFilter,
 								sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
-								bool padView, bool clearBackground)
+								bool padView, bool clearBackground, bool allowSpatialScaler)
 {
     if (!presentTexture || !AcquireDrawable(!padView))
         return;
@@ -590,7 +614,7 @@ void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, Renderer
     auto& layer = GetLayer(!padView);
 
 #if !TARGET_OS_SIMULATOR
-    if (!padView && g_render_scale > 0.0f && g_render_scale < 0.99f && imageWidth > 0 && imageHeight > 0)
+    if (allowSpatialScaler && !padView && g_render_scale > 0.0f && g_render_scale < 0.99f && imageWidth > 0 && imageHeight > 0)
     {
         const uint32 inW = (uint32)presentTexture->width();
         const uint32 inH = (uint32)presentTexture->height();

@@ -78,6 +78,8 @@
 	<true/>
 	<key>UIStatusBarHidden</key>
 	<true/>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<!-- a launch screen definition is what gives the app the native resolution -->

@@ -585,12 +585,14 @@ private:
 	void SwapBuffer(bool mainWindow);
 	void DrawBackbufferTexture(MTL::Texture* presentTexture, RendererOutputShader* shader, bool useLinearTexFilter,
 								sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
-								bool padView, bool clearBackground);
+								bool padView, bool clearBackground, bool allowSpatialScaler = true);
 
 	class MetalFrameGen* m_frameGen = nullptr;
 	bool m_fgInterpolatedThisFrame = false;
-	double m_fgDelaySec = 0.016;
+	double m_fgDelaySec = 0.007;
 	uint64_t m_fgLastNs = 0;
+	double m_fgSmoothDt = 0.033;
+	double m_fgBudget = 0.0;
 
 	void EnsureImGuiBackend();
 
