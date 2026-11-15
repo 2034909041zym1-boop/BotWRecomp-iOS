@@ -273,32 +273,33 @@ input::PadState contribution(float dt) {
     if (g.macro_id != 0) {
         const double ms = (SDL_GetTicksNS() - g.macro_t0_ns) * 1e-6;
         if (g.macro_id == 1) {  // WB: Ledge Front-Hop Windbomb (30fps BotW physics)
-            // 1) Keep ly=1.0 through ~320ms so Link actually clears the ledge before L/ZR.
-            // 2) Drop Round Bomb (L) once airborne past the ledge, then tap ZR (~60ms) to enter Bullet Time.
+            // 1) Drop Round Bomb (L) immediately on hop takeoff (140..200ms) so it stays near the ledge.
+            // 2) Keep ly=1.0 through 340ms to clear the ledge, then single-frame ZR tap (36ms) for Bullet Time.
             // 3) Wait >=120ms after closing BTN_UP rune menu before L so the menu transition doesn't eat L.
-            if (ms < 80.0) {
+            if (ms < 70.0) {
                 t.buttons |= input::BTN_ZL;
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 180.0) {
+            } else if (ms < 140.0) {
                 t.buttons |= input::BTN_ZL | input::BTN_X;
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 320.0) {
+            } else if (ms < 200.0) {
+                t.buttons |= input::BTN_L;
                 if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < 400.0) {
-                t.buttons |= input::BTN_L;
-            } else if (ms >= 420.0 && ms < 480.0) {
+            } else if (ms < 340.0) {
+                if (t.ly < 0.8f) t.ly = 1.0f;
+            } else if (ms < 376.0) {
                 t.buttons |= input::BTN_ZR;
-            } else if (ms >= 580.0 && ms < 760.0) {
+            } else if (ms >= 480.0 && ms < 660.0) {
                 t.buttons |= input::BTN_UP;
-                if (ms >= 640.0 && ms < 730.0) t.rx = 1.0f;
-            } else if (ms >= 880.0 && ms < 970.0) {
+                if (ms >= 540.0 && ms < 630.0) t.rx = 1.0f;
+            } else if (ms >= 780.0 && ms < 860.0) {
                 t.buttons |= input::BTN_L;
-            } else if (ms >= 1320.0 && ms < 1500.0) {
+            } else if (ms >= 1200.0 && ms < 1380.0) {
                 t.buttons |= input::BTN_UP;
-                if (ms >= 1380.0 && ms < 1470.0) t.rx = -1.0f;
-            } else if (ms >= 1620.0 && ms < 1710.0) {
+                if (ms >= 1260.0 && ms < 1350.0) t.rx = -1.0f;
+            } else if (ms >= 1500.0 && ms < 1580.0) {
                 t.buttons |= input::BTN_L;
-            } else if (ms >= 1710.0) {
+            } else if (ms >= 1580.0) {
                 g.macro_id = 0;
             }
         } else if (g.macro_id == 2) {  // PR: Parry (ZL shield + A parry)
