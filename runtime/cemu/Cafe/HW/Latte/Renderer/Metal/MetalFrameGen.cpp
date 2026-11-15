@@ -281,8 +281,10 @@ bool MetalFrameGen::EnsurePipelines()
     if (m_initFailed || !m_device) return false;
 
     LocalAutoreleasePool pool;
+    log_write("fg: EnsurePipelines begin (device=%p)", m_device);
     NS::Error* error = nullptr;
     m_library = m_device->newLibrary(ToNSString(kFrameGenMSL), nullptr, &error);
+    log_write("fg: newLibrary done (lib=%p, err=%p)", m_library, error);
     if (!m_library)
     {
         log_write("MetalFrameGen: failed to compile MSL library: %s",
@@ -293,7 +295,7 @@ bool MetalFrameGen::EnsurePipelines()
 
     auto makePSO = [&](const char* name) -> MTL::ComputePipelineState* {
         NS_STACK_SCOPED MTL::Function* fn = m_library->newFunction(ToNSString(name));
-        if (!fn) return nullptr;
+        if (!fn) { log_write("fg: missing fn %s", name); return nullptr; }
         NS::Error* psoErr = nullptr;
         auto* pso = m_device->newComputePipelineState(fn, &psoErr);
         if (!pso)
@@ -311,6 +313,7 @@ bool MetalFrameGen::EnsurePipelines()
     m_psoFlowRefine = makePSO("fg_flow_refine");
     m_psoFlowSmooth = makePSO("fg_flow_smooth");
     m_psoInterpolate = makePSO("fg_interpolate");
+    log_write("fg: all 7 PSOs created");
 
     NS_STACK_SCOPED auto* sampDesc = MTL::SamplerDescriptor::alloc()->init();
     sampDesc->setMinFilter(MTL::SamplerMinMagFilterLinear);
@@ -318,6 +321,7 @@ bool MetalFrameGen::EnsurePipelines()
     sampDesc->setSAddressMode(MTL::SamplerAddressModeClampToEdge);
     sampDesc->setTAddressMode(MTL::SamplerAddressModeClampToEdge);
     m_linearSampler = m_device->newSamplerState(sampDesc);
+    log_write("fg: sampler created (%p)", m_linearSampler);
 
     if (!m_psoCopy || !m_psoLuma1 || !m_psoLumaDown || !m_psoFlowCoarse ||
         !m_psoFlowRefine || !m_psoFlowSmooth || !m_psoInterpolate || !m_linearSampler)
@@ -407,13 +411,18 @@ bool MetalFrameGen::Process(MTL::CommandBuffer* cmdBuf, MTL::Texture* srcTex, bo
 {
     if (!cmdBuf || !srcTex) return false;
     LocalAutoreleasePool pool;
+    static int s_logN = 0;
+    const bool dbg = (s_logN < 4);
+    if (dbg) s_logN++;
     const uint32_t w = (uint32_t)srcTex->width();
     const uint32_t h = (uint32_t)srcTex->height();
+    if (dbg) log_write("fg: Process #%d w=%u h=%u fmt=%u gen=%d", s_logN, w, h, (uint32_t)srcTex->pixelFormat(), (int)generate);
     if (w < 64 || h < 64) return false;
 
     const bool isSRGB = isSRGBFormat(srcTex->pixelFormat());
     if (!EnsurePipelines()) return false;
-    if (!EnsureTextures(w, h, isSRGB)) return false;
+    if (!EnsureTextures(w, h, isSRGB)) { log_write("fg: EnsureTextures failed"); return false; }
+    if (dbg) log_write("fg: textures ready");
 
     const int curr = m_currIdx;
     const int prev = 1 - m_currIdx;
@@ -511,6 +520,7 @@ bool MetalFrameGen::Process(MTL::CommandBuffer* cmdBuf, MTL::Texture* srcTex, bo
     }
 
     enc->endEncoding();
+    if (dbg) log_write("fg: Process #%d endEncoding ok (generated=%d)", s_logN, (int)generated);
 
     m_hasPrev = true;
     m_currIdx = 1 - m_currIdx;
