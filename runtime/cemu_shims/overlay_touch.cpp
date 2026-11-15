@@ -4,6 +4,7 @@
 // ImGui font is a 13 px bitmap and would be blurry at thumb size.
 #include <imgui.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "../src/host/touch.h"
