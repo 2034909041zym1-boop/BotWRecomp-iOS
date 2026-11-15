@@ -272,15 +272,32 @@ input::PadState contribution(float dt) {
     }
     if (g.macro_id != 0) {
         const double ms = (SDL_GetTicksNS() - g.macro_t0_ns) * 1e-6;
-        if (g.macro_id == 1) {  // WB: Windbomb (ZL+X forward jump -> L round bomb -> ZR bullet time -> Up+R square -> L -> Up+L -> L detonate)
-            if (ms < 90.0) { t.buttons |= input::BTN_ZL | input::BTN_X; if (t.ly < 0.8f) t.ly = 1.0f; }
-            else if (ms < 150.0) { t.buttons |= input::BTN_L; }
-            else if (ms >= 170.0 && ms < 250.0) { t.buttons |= input::BTN_ZR; }
-            else if (ms >= 250.0 && ms < 380.0) { t.buttons |= input::BTN_UP; t.rx = 1.0f; }
-            else if (ms >= 400.0 && ms < 470.0) { t.buttons |= input::BTN_L; }
-            else if (ms >= 490.0 && ms < 610.0) { t.buttons |= input::BTN_UP; t.rx = -1.0f; }
-            else if (ms >= 640.0 && ms < 730.0) { t.buttons |= input::BTN_L; }
-            else if (ms >= 730.0) { g.macro_id = 0; }
+        if (g.macro_id == 1) {  // WB: Windbomb (ZL+forward -> ZL+X hop -> L round -> hold ZR bullet time -> Up+R square -> L -> Up+L round -> L detonate)
+            if (ms < 60.0) {
+                t.buttons |= input::BTN_ZL;
+                if (t.ly < 0.8f) t.ly = 1.0f;
+            } else if (ms < 130.0) {
+                t.buttons |= input::BTN_ZL | input::BTN_X;
+                if (t.ly < 0.8f) t.ly = 1.0f;
+            } else if (ms < 190.0) {
+                t.buttons |= input::BTN_L;
+            } else if (ms >= 220.0 && ms < 760.0) {
+                // Keep ZR held to stay in Bullet Time until detonation
+                t.buttons |= input::BTN_ZR;
+                if (ms >= 280.0 && ms < 440.0) {
+                    t.buttons |= input::BTN_UP;
+                    if (ms >= 340.0) t.rx = 1.0f;
+                } else if (ms >= 470.0 && ms < 540.0) {
+                    t.buttons |= input::BTN_L;
+                } else if (ms >= 560.0 && ms < 720.0) {
+                    t.buttons |= input::BTN_UP;
+                    if (ms >= 620.0) t.rx = -1.0f;
+                }
+            } else if (ms >= 760.0 && ms < 840.0) {
+                t.buttons |= input::BTN_L;
+            } else if (ms >= 840.0) {
+                g.macro_id = 0;
+            }
         } else if (g.macro_id == 2) {  // PR: Parry (ZL shield + A parry)
             if (ms < 180.0) {
                 t.buttons |= input::BTN_ZL;
