@@ -260,12 +260,29 @@ static inline float fxaaLuma(float3 c) {
 
 static inline float4 sampleFXAA(texture2d<float> tex, sampler s, float2 uv, float2 rcpFrame) {
     float3 rgbM  = tex.sample(s, uv).rgb;
+    float3 rgbN  = tex.sample(s, uv + float2( 0.0f, -1.0f) * rcpFrame).rgb;
+    float3 rgbS  = tex.sample(s, uv + float2( 0.0f,  1.0f) * rcpFrame).rgb;
+    float3 rgbW  = tex.sample(s, uv + float2(-1.0f,  0.0f) * rcpFrame).rgb;
+    float3 rgbE  = tex.sample(s, uv + float2( 1.0f,  0.0f) * rcpFrame).rgb;
+
+    float lumaM = fxaaLuma(rgbM);
+    float lumaN = fxaaLuma(rgbN);
+    float lumaS = fxaaLuma(rgbS);
+    float lumaW = fxaaLuma(rgbW);
+    float lumaE = fxaaLuma(rgbE);
+
+    // Protect 1px-thin UI strokes and crisp glyphs from diagonal FXAA blurring
+    bool thinStrokeH = (lumaM - max(lumaW, lumaE) > 0.18f) || (min(lumaW, lumaE) - lumaM > 0.18f);
+    bool thinStrokeV = (lumaM - max(lumaN, lumaS) > 0.18f) || (min(lumaN, lumaS) - lumaM > 0.18f);
+    if (thinStrokeH || thinStrokeV) {
+        return float4(rgbM, 0.0f);
+    }
+
     float3 rgbNW = tex.sample(s, uv + float2(-1.0f, -1.0f) * rcpFrame).rgb;
     float3 rgbNE = tex.sample(s, uv + float2( 1.0f, -1.0f) * rcpFrame).rgb;
     float3 rgbSW = tex.sample(s, uv + float2(-1.0f,  1.0f) * rcpFrame).rgb;
     float3 rgbSE = tex.sample(s, uv + float2( 1.0f,  1.0f) * rcpFrame).rgb;
 
-    float lumaM  = fxaaLuma(rgbM);
     float lumaNW = fxaaLuma(rgbNW);
     float lumaNE = fxaaLuma(rgbNE);
     float lumaSW = fxaaLuma(rgbSW);
@@ -327,7 +344,38 @@ fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[t
 
     float3 amp = clamp(min(mn, float3(1.0f) - mx) / max(mx, float3(1e-5f)), float3(0.0f), float3(1.0f));
     amp = sqrt(amp);
-    float3 weight = amp * (-0.145f * (1.0f - 0.55f * aa.a));
+    float3 weight = amp * (-0.165f);
+    float3 sharpened = clamp((c + (n + s + w + e) * weight) / (float3(1.0f) + 4.0f * weight), float3(0.0f), float3(1.0f));
+    return float4(sharpened, 1.0f);
+}
+)";
+
+const std::string RendererOutputShader::s_cas_shader_source_mtl =
+R"(#include <metal_stdlib>
+using namespace metal;
+
+struct VertexOut {
+    float4 position [[position]];
+    float2 uv;
+};
+
+fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
+    float2 rcpFrame = float2(1.0f) / float2(textureSrc.get_width(), textureSrc.get_height());
+    float3 c = textureSrc.sample(samplr, in.uv).rgb;
+
+    float3 n = textureSrc.sample(samplr, in.uv + float2( 0.0f, -1.0f) * rcpFrame).rgb;
+    float3 s = textureSrc.sample(samplr, in.uv + float2( 0.0f,  1.0f) * rcpFrame).rgb;
+    float3 w = textureSrc.sample(samplr, in.uv + float2(-1.0f,  0.0f) * rcpFrame).rgb;
+    float3 e = textureSrc.sample(samplr, in.uv + float2( 1.0f,  0.0f) * rcpFrame).rgb;
+
+    float3 mn = min(min(n, s), min(w, e));
+    float3 mx = max(max(n, s), max(w, e));
+    mn = min(mn, c);
+    mx = max(mx, c);
+
+    float3 amp = clamp(min(mn, float3(1.0f) - mx) / max(mx, float3(1e-5f)), float3(0.0f), float3(1.0f));
+    amp = sqrt(amp);
+    float3 weight = amp * (-0.175f);
     float3 sharpened = clamp((c + (n + s + w + e) * weight) / (float3(1.0f) + 4.0f * weight), float3(0.0f), float3(1.0f));
     return float4(sharpened, 1.0f);
 }
@@ -394,6 +442,9 @@ RendererOutputShader* RendererOutputShader::s_fxaa_shader_ud;
 
 RendererOutputShader* RendererOutputShader::s_fxaa_cas_shader;
 RendererOutputShader* RendererOutputShader::s_fxaa_cas_shader_ud;
+
+RendererOutputShader* RendererOutputShader::s_cas_shader;
+RendererOutputShader* RendererOutputShader::s_cas_shader_ud;
 
 std::string RendererOutputShader::GetOpenGlVertexSource(bool render_upside_down)
 {
@@ -609,6 +660,9 @@ void RendererOutputShader::InitializeStatic()
 
        	s_fxaa_cas_shader = new RendererOutputShader(vertex_source, s_fxaa_cas_shader_source_mtl);
        	s_fxaa_cas_shader_ud = new RendererOutputShader(vertex_source_ud, s_fxaa_cas_shader_source_mtl);
+
+       	s_cas_shader = new RendererOutputShader(vertex_source, s_cas_shader_source_mtl);
+       	s_cas_shader_ud = new RendererOutputShader(vertex_source_ud, s_cas_shader_source_mtl);
 		break;
     }
 #endif
@@ -669,4 +723,7 @@ void RendererOutputShader::ShutdownStatic()
 
 	delete s_fxaa_cas_shader;
 	delete s_fxaa_cas_shader_ud;
+
+	delete s_cas_shader;
+	delete s_cas_shader_ud;
 }

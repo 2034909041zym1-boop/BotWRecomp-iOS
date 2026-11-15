@@ -985,9 +985,14 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 				shader = renderUpsideDown ? RendererOutputShader::s_fxaa_shader_ud : RendererOutputShader::s_fxaa_shader;
 				filter = LatteTextureView::MagFilter::kLinear;
 			}
-			else if (aa >= 2)
+			else if (aa == 2)
 			{
 				shader = renderUpsideDown ? RendererOutputShader::s_fxaa_cas_shader_ud : RendererOutputShader::s_fxaa_cas_shader;
+				filter = LatteTextureView::MagFilter::kLinear;
+			}
+			else if (aa >= 3)
+			{
+				shader = renderUpsideDown ? RendererOutputShader::s_cas_shader_ud : RendererOutputShader::s_cas_shader;
 				filter = LatteTextureView::MagFilter::kLinear;
 			}
 		}

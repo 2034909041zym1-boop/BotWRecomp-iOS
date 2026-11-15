@@ -20,7 +20,7 @@ enum RowId { kFps, kScale, kAA, kFilter, kDisplay, kShowFps, kGyro, kRumble, kLa
 const float kScales[] = {0, 0.5f, 0.75f, 0.8f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the display
 const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (裁剪)", "宽屏 hor+ (重启后生效)"};
 const char* kFilters[] = {"双线性 (Bilinear)", "双三次 (Bicubic)", "埃尔米特 (Hermite)", "邻近采样 (Nearest)"};
-const char* kAAModes[] = {"关闭 (原生)", "FXAA 抗锯齿", "FXAA + CAS 锐化"};
+const char* kAAModes[] = {"关闭 (原生)", "FXAA 抗锯齿", "FXAA + CAS 锐化", "CAS 锐化 (无模糊)"};
 const char* kShowFpsModes[] = {"关闭", "一档: 仅帧率", "二档: 帧率 + GPU状态"};
 
 std::string scale_text(float s) {
@@ -41,7 +41,7 @@ void step(Settings& s, int row, int dir) {
             s.scale = kScales[wrap(i + dir, (int)std::size(kScales))];
             break;
         }
-        case kAA: s.aa = wrap(s.aa + dir, 3); break;
+        case kAA: s.aa = wrap(s.aa + dir, 4); break;
         case kDisplay: s.display = wrap(s.display + dir, 4); break;
         case kFilter: s.filter = wrap(s.filter + dir, 4); break;
         case kGyro: s.gyro = !s.gyro; break;
@@ -144,7 +144,7 @@ View view() {
     v.rows.resize(kRows);
     v.rows[kFps] = {"帧率模式", s.fps >= 60 ? "60 帧 (高负载)" : "30 帧 (流畅省电)", false, "画质与性能"};
     v.rows[kScale] = {"渲染分辨率", scale_text(s.scale)};
-    v.rows[kAA] = {"抗锯齿", kAAModes[std::clamp(s.aa, 0, 2)]};
+    v.rows[kAA] = {"抗锯齿", kAAModes[std::clamp(s.aa, 0, 3)]};
     v.rows[kFilter] = {"缩放滤镜", s.aa > 0 ? "由抗锯齿接管" : kFilters[std::clamp(s.filter, 0, 3)]};
     v.rows[kDisplay] = {"画面比例", kDisplays[std::clamp(s.display, 0, 3)]};
     v.rows[kShowFps] = {"性能角标", kShowFpsModes[std::clamp(s.show_fps, 0, 2)]};
