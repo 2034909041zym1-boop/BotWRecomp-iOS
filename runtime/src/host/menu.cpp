@@ -22,7 +22,7 @@ enum RowId {
     kVolume, kClose, kRows
 };
 const float kScales[] = {0, 0.5f, 0.75f, 0.8f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the display
-const float kLookSensValues[] = {1.0f, 1.3f, 1.6f, 2.0f, 2.5f, 3.0f};
+const float kLookSensValues[] = {1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 5.0f};
 const int kTouchAlphas[] = {25, 50, 75, 100};
 const char* kDisplays[] = {"原始 16:9 (黑边)", "全屏拉伸", "全屏填充 (裁剪)", "宽屏 hor+ (重启后生效)"};
 const char* kFilters[] = {"双线性 (Bilinear)", "双三次 (Bicubic)", "埃尔米特 (Hermite)", "邻近采样 (Nearest)"};

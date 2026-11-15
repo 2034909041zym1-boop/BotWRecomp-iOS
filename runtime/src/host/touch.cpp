@@ -47,10 +47,10 @@ namespace {
 // Feel. Distances in points (pixels / u).
 constexpr float kStickRadius = 54;     // floating stick drag radius
 constexpr float kStickDead = 0.10f;    // radial dead zone, fraction of the radius
-constexpr float kLookFullSpeed = 420;  // camera drag speed (pt/s) for a full right-stick deflection
-constexpr float kLookRest = 10;        // slower than this (smoothed) counts as a resting finger
-constexpr float kLookFloor = 0.12f;    // smallest non-zero output, past the game's own stick dead zone
-constexpr float kLookTau = 0.045f;     // velocity smoothing time constant, seconds
+constexpr float kLookFullSpeed = 240;  // camera drag speed (pt/s) for a full right-stick deflection
+constexpr float kLookRest = 8;         // slower than this (smoothed) counts as a resting finger
+constexpr float kLookFloor = 0.22f;    // smallest non-zero output, past the game's own stick dead zone
+constexpr float kLookTau = 0.016f;     // velocity smoothing time constant, seconds
 constexpr float kSlop = 1.25f;         // round buttons react a bit outside their drawn radius
 constexpr float kPillSlop = 10;        // and shoulder buttons this many points outside
 
@@ -260,7 +260,7 @@ input::PadState contribution(float dt) {
             g.vy += (dy / dt - g.vy) * a;
             float sp = hypotf(g.vx, g.vy);
             if (sp > kLookRest) {
-                const float sens = std::clamp(g_look_sens.load(), 0.5f, 4.0f);
+                const float sens = std::clamp(g_look_sens.load(), 0.5f, 6.0f);
                 const float full_speed = std::max(kLookRest + 40.0f, kLookFullSpeed / sens);
                 float o = std::clamp((sp - kLookRest) / (full_speed - kLookRest), 0.0f, 1.0f);
                 if (g_look_accel.load()) o = o * (0.72f + 0.28f * o);
@@ -518,7 +518,7 @@ void set_controller_connected(bool c) { g_controller = c; }
 void set_hidden(bool h) { g_hidden = h; }
 void set_stick_fixed(bool fixed) { g_stick_fixed = fixed; }
 void set_look_params(float sens, bool accel) {
-    g_look_sens = std::clamp(sens, 0.5f, 4.0f);
+    g_look_sens = std::clamp(sens, 0.5f, 6.0f);
     g_look_accel = accel;
 }
 void set_alpha(float alpha) { g_alpha = std::clamp(alpha, 0.2f, 1.0f); }

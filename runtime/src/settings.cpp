@@ -88,7 +88,7 @@ void load(const std::string& path) {
                 else if (!strcmp(line, "touch")) g_s.touch = atoi(v);
                 else if (!strcmp(line, "touch_hidden")) g_s.touch_hidden = atoi(v) != 0;
                 else if (!strcmp(line, "stick_fixed")) g_s.stick_fixed = atoi(v) != 0 ? 1 : 0;
-                else if (!strcmp(line, "look_sens")) g_s.look_sens = std::clamp((float)atof(v), 0.5f, 4.0f);
+                else if (!strcmp(line, "look_sens")) g_s.look_sens = std::clamp((float)atof(v), 0.5f, 6.0f);
                 else if (!strcmp(line, "look_accel")) g_s.look_accel = atoi(v) != 0 ? 1 : 0;
                 else if (!strcmp(line, "touch_alpha")) g_s.touch_alpha = std::clamp(atoi(v), 25, 100);
                 else if (!strcmp(line, "macro_btns")) g_s.macro_btns = atoi(v) != 0 ? 1 : 0;
