@@ -34,6 +34,7 @@ bool is_open();
 }
 extern "C" void botw_wait_while_background();
 extern "C" void botw_record_gpu_time_us(uint64_t us);
+extern "C" void botw_record_frame_gen_present();
 extern float g_render_scale;
 
 namespace {
@@ -565,6 +566,7 @@ void MetalRenderer::FrameGenPresentInterpolated(bool mainWindow)
         return;
     GetLayer(mainWindow).PresentDrawable(GetCommandBuffer());
     CommitCommandBuffer();
+    botw_record_frame_gen_present();
 }
 
 void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter,

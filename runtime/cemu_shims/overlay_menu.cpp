@@ -24,10 +24,16 @@ std::string main_wait_report();
 
 namespace {
 std::atomic<float> g_fps{0};
+std::atomic<float> g_fg_fps{0};
+std::atomic<int> g_fg_frames{0};
 std::atomic<int> g_draws{0};
 std::atomic<float> g_gpu_ms_f{0};
 std::atomic<float> g_us_per_draw{0};
 }  // namespace
+
+extern "C" void botw_record_frame_gen_present() {
+    g_fg_frames.fetch_add(1, std::memory_order_relaxed);
+}
 
 // Cemu's GPU thread (LatteThread), for the host loop's slow-frame sampler (window.mm).
 std::atomic<pthread_t> g_gpu_thread{nullptr};
@@ -41,6 +47,8 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
     auto now_tp = clock::now();
     double dt_s = std::chrono::duration<double>(now_tp - s_prev_tp).count();
     s_prev_tp = now_tp;
+    const int fg_cnt = g_fg_frames.exchange(0, std::memory_order_relaxed);
+    g_fg_fps.store((dt_s > 0.05) ? (float)((double)fg_cnt / dt_s) : 0.0f, std::memory_order_relaxed);
     uint64_t gpu_us = g_gpu_hw_time_us.exchange(0, std::memory_order_relaxed);
     double gpu_ms_f = 0.0, us_per_draw = 0.0;
     if (dt_s > 0.05 && fps > 0.5) {
@@ -160,7 +168,14 @@ void LatteOverlay_render(bool padView) {
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.86f, 0.71f, 0.34f, 0.35f));
         if (ImGui::Begin("##fps", nullptr, overlay | ImGuiWindowFlags_NoInputs)) {
             ImGui::SetWindowFontScale(font_scale * 0.90f);
-            ImGui::Text("%.0f FPS  ·  %d Draws", (double)g_fps, (int)g_draws);
+            const float base_fps = g_fps.load(std::memory_order_relaxed);
+            const float fg_fps = g_fg_fps.load(std::memory_order_relaxed);
+            if (settings::get().frame_gen != 0 || fg_fps >= 0.5f) {
+                ImGui::Text("%.0f FPS (原%.0f+插%.0f)  ·  %d Draws",
+                            (double)(base_fps + fg_fps), (double)base_fps, (double)fg_fps, (int)g_draws);
+            } else {
+                ImGui::Text("%.0f FPS  ·  %d Draws", (double)base_fps, (int)g_draws);
+            }
             if (show_mode >= 2) {
                 const float gpu_ms = g_gpu_ms_f.load(std::memory_order_relaxed);
                 const float us_d = g_us_per_draw.load(std::memory_order_relaxed);

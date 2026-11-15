@@ -236,7 +236,7 @@ kernel void fg_interpolate(
     // Guard against disocclusion double-images and static/zero-flow ghosting
     float flowMag = length(flow.xy);
     float diff = dot(abs(c0.rgb - c1.rgb), float3(0.3333f));
-    float wWarp = (flowMag >= 0.35f) ? conf * (1.0f - smoothstep(0.05f, 0.14f, diff)) : 0.0f;
+    float wWarp = (flowMag >= 0.35f) ? conf * (1.0f - smoothstep(0.12f, 0.30f, diff)) : 0.0f;
     float4 blended = 0.5f * (c0 + c1);
     float4 out = mix(cCurr, blended, wWarp);
 
@@ -441,7 +441,7 @@ bool MetalFrameGen::Process(MTL::CommandBuffer* cmdBuf, MTL::Texture* srcTex, bo
         enc->dispatchThreadgroups(grid, tg);
     };
 
-    FGParams p{w, h, w, h, w, h, isSRGB ? 1u : 0u, 0.09f};
+    FGParams p{w, h, w, h, w, h, isSRGB ? 1u : 0u, 0.14f};
 
     // 1. Copy srcTex into m_frameTex[curr]
     enc->setComputePipelineState(m_psoCopy);
