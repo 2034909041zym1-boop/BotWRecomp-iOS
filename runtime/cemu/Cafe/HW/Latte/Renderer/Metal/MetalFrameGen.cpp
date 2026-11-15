@@ -3,6 +3,8 @@
 
 #include <algorithm>
 
+void log_write(const char* fmt, ...);
+
 namespace
 {
 struct LocalAutoreleasePool
@@ -283,8 +285,8 @@ bool MetalFrameGen::EnsurePipelines()
     m_library = m_device->newLibrary(ToNSString(kFrameGenMSL), nullptr, &error);
     if (!m_library)
     {
-        cemuLog_log(LogType::Force, "MetalFrameGen: failed to compile MSL library: {}",
-                    error ? error->localizedDescription()->utf8String() : "unknown");
+        log_write("MetalFrameGen: failed to compile MSL library: %s",
+                  error ? error->localizedDescription()->utf8String() : "unknown");
         m_initFailed = true;
         return false;
     }
@@ -296,8 +298,8 @@ bool MetalFrameGen::EnsurePipelines()
         auto* pso = m_device->newComputePipelineState(fn, &psoErr);
         if (!pso)
         {
-            cemuLog_log(LogType::Force, "MetalFrameGen: failed to create PSO {}: {}", name,
-                        psoErr ? psoErr->localizedDescription()->utf8String() : "unknown");
+            log_write("MetalFrameGen: failed to create PSO %s: %s", name,
+                      psoErr ? psoErr->localizedDescription()->utf8String() : "unknown");
         }
         return pso;
     };
@@ -324,7 +326,7 @@ bool MetalFrameGen::EnsurePipelines()
         return false;
     }
 
-    cemuLog_log(LogType::Force, "MetalFrameGen: optical flow compute pipelines initialized");
+    log_write("MetalFrameGen: optical flow compute pipelines initialized");
     return true;
 }
 
@@ -410,8 +412,8 @@ bool MetalFrameGen::Process(MTL::CommandBuffer* cmdBuf, MTL::Texture* srcTex, bo
     if (w < 64 || h < 64) return false;
 
     const bool isSRGB = isSRGBFormat(srcTex->pixelFormat());
-    if (!EnsurePipelines() || !EnsureTextures(w, h, isSRGB))
-        return false;
+    if (!EnsurePipelines()) return false;
+    if (!EnsureTextures(w, h, isSRGB)) return false;
 
     const int curr = m_currIdx;
     const int prev = 1 - m_currIdx;
