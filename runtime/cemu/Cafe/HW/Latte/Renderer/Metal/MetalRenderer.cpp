@@ -588,17 +588,8 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
                                                shader == RendererOutputShader::s_hermit_shader_ud ||
                                                shader == RendererOutputShader::s_fxaa_shader_ud ||
                                                shader == RendererOutputShader::s_fxaa_cas_shader_ud);
-                    const bool wantsCas = (shader == RendererOutputShader::s_fxaa_cas_shader ||
-                                           shader == RendererOutputShader::s_fxaa_cas_shader_ud);
                     presentTexture = m_spatialScalerOutput;
-                    if (wantsCas)
-                    {
-                        shader = isUpsideDown ? RendererOutputShader::s_cas_shader_ud : RendererOutputShader::s_cas_shader;
-                    }
-                    else
-                    {
-                        shader = isUpsideDown ? RendererOutputShader::s_copy_shader_ud : RendererOutputShader::s_copy_shader;
-                    }
+                    shader = isUpsideDown ? RendererOutputShader::s_copy_shader_ud : RendererOutputShader::s_copy_shader;
                     useLinearTexFilter = false;
                 }
             }
@@ -628,8 +619,6 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
     else if (shader == RendererOutputShader::s_fxaa_shader_ud) shaderIndex = 7;
     else if (shader == RendererOutputShader::s_fxaa_cas_shader) shaderIndex = 8;
     else if (shader == RendererOutputShader::s_fxaa_cas_shader_ud) shaderIndex = 9;
-    else if (shader == RendererOutputShader::s_cas_shader) shaderIndex = 10;
-    else if (shader == RendererOutputShader::s_cas_shader_ud) shaderIndex = 11;
 
     // Get the render pipeline state
     auto renderPipelineState = m_outputShaderCache->GetPipeline(shader, shaderIndex, m_state.m_usesSRGB);

@@ -333,37 +333,6 @@ fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[t
 }
 )";
 
-const std::string RendererOutputShader::s_cas_shader_source_mtl =
-R"(#include <metal_stdlib>
-using namespace metal;
-
-struct VertexOut {
-    float4 position [[position]];
-    float2 uv;
-};
-
-fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
-    float2 rcpFrame = float2(1.0f) / float2(textureSrc.get_width(), textureSrc.get_height());
-    float3 c = textureSrc.sample(samplr, in.uv).rgb;
-
-    float3 n = textureSrc.sample(samplr, in.uv + float2( 0.0f, -1.0f) * rcpFrame).rgb;
-    float3 s = textureSrc.sample(samplr, in.uv + float2( 0.0f,  1.0f) * rcpFrame).rgb;
-    float3 w = textureSrc.sample(samplr, in.uv + float2(-1.0f,  0.0f) * rcpFrame).rgb;
-    float3 e = textureSrc.sample(samplr, in.uv + float2( 1.0f,  0.0f) * rcpFrame).rgb;
-
-    float3 mn = min(min(n, s), min(w, e));
-    float3 mx = max(max(n, s), max(w, e));
-    mn = min(mn, c);
-    mx = max(mx, c);
-
-    float3 amp = clamp(min(mn, float3(1.0f) - mx) / max(mx, float3(1e-5f)), float3(0.0f), float3(1.0f));
-    amp = sqrt(amp);
-    float3 weight = amp * (-0.175f);
-    float3 sharpened = clamp((c + (n + s + w + e) * weight) / (float3(1.0f) + 4.0f * weight), float3(0.0f), float3(1.0f));
-    return float4(sharpened, 1.0f);
-}
-)";
-
 RendererOutputShader::RendererOutputShader(const std::string& vertex_source, const std::string& fragment_source)
 {
     std::string finalFragmentSrc;
@@ -425,9 +394,6 @@ RendererOutputShader* RendererOutputShader::s_fxaa_shader_ud;
 
 RendererOutputShader* RendererOutputShader::s_fxaa_cas_shader;
 RendererOutputShader* RendererOutputShader::s_fxaa_cas_shader_ud;
-
-RendererOutputShader* RendererOutputShader::s_cas_shader;
-RendererOutputShader* RendererOutputShader::s_cas_shader_ud;
 
 std::string RendererOutputShader::GetOpenGlVertexSource(bool render_upside_down)
 {
@@ -643,9 +609,6 @@ void RendererOutputShader::InitializeStatic()
 
        	s_fxaa_cas_shader = new RendererOutputShader(vertex_source, s_fxaa_cas_shader_source_mtl);
        	s_fxaa_cas_shader_ud = new RendererOutputShader(vertex_source_ud, s_fxaa_cas_shader_source_mtl);
-
-       	s_cas_shader = new RendererOutputShader(vertex_source, s_cas_shader_source_mtl);
-       	s_cas_shader_ud = new RendererOutputShader(vertex_source_ud, s_cas_shader_source_mtl);
 		break;
     }
 #endif
@@ -706,7 +669,4 @@ void RendererOutputShader::ShutdownStatic()
 
 	delete s_fxaa_cas_shader;
 	delete s_fxaa_cas_shader_ud;
-
-	delete s_cas_shader;
-	delete s_cas_shader_ud;
 }
