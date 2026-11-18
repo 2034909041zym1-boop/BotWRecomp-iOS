@@ -17,7 +17,7 @@ std::atomic<bool> g_open{false};
 int g_cursor = 0;
 
 enum RowId {
-    kFps, kFrameGen, kScale, kAA, kFilter, kShadowHalf, kAniso4x, kGrassLod, kDisplay, kShowFps,
+    kFps, kFrameGen, kScale, kMetalFX, kAA, kFilter, kShadowHalf, kAniso4x, kGrassLod, kDisplay, kShowFps,
     kGyro, kRumble, kLayout, kTouch, kStickFixed, kLookSens, kLookAccel, kTouchAlpha, kMacroBtns,
     kVolume, kClose, kRows
 };
@@ -55,6 +55,7 @@ void step(Settings& s, int row, int dir) {
             s.scale = kScales[wrap(i + dir, (int)std::size(kScales))];
             break;
         }
+        case kMetalFX: s.metalfx = wrap(s.metalfx + dir, 3); break;
         case kAA: s.aa = wrap(s.aa + dir, 4); break;
         case kDisplay: s.display = wrap(s.display + dir, 4); break;
         case kFilter: s.filter = wrap(s.filter + dir, 4); break;
@@ -180,6 +181,8 @@ View view() {
     v.rows[kFps] = {"帧率模式", fps_label, false, "画质与性能"};
     v.rows[kFrameGen] = {"帧生成 (实验性)", s.frame_gen ? "2x 光流插帧 (建议配30帧)" : "关闭"};
     v.rows[kScale] = {"渲染分辨率", scale_text(s.scale)};
+    static const char* kMetalFxModes[] = {"自动 (<1x开启)", "全局开启 (含1x)", "关闭"};
+    v.rows[kMetalFX] = {"MetalFX 超分", kMetalFxModes[std::clamp(s.metalfx, 0, 2)]};
     v.rows[kAA] = {"抗锯齿", kAAModes[std::clamp(s.aa, 0, 3)]};
     v.rows[kFilter] = {"缩放滤镜", s.aa > 0 ? "由抗锯齿接管" : kFilters[std::clamp(s.filter, 0, 3)]};
     v.rows[kShadowHalf] = {"阴影分辨率", s.shadow_half ? "50% 省电 (重启生效)" : "原生 100%"};

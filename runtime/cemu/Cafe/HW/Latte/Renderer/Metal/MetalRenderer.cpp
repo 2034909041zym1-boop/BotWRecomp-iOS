@@ -36,6 +36,7 @@ extern "C" void botw_wait_while_background();
 extern "C" void botw_record_gpu_time_us(uint64_t us);
 extern "C" void botw_record_frame_gen_present();
 extern float g_render_scale;
+extern std::atomic<int> g_metalfx_mode;
 std::atomic<uint32_t> g_last_render_passes{0};
 std::atomic<uint32_t> g_last_clears{0};
 std::atomic<uint32_t> g_last_cmd_bufs{0};
@@ -604,7 +605,9 @@ void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, Renderer
     auto& layer = GetLayer(!padView);
 
 #if !TARGET_OS_SIMULATOR
-    if (allowSpatialScaler && !padView && g_render_scale > 0.0f && g_render_scale < 0.99f && imageWidth > 0 && imageHeight > 0)
+    const int mfxMode = g_metalfx_mode.load(std::memory_order_relaxed);
+    const bool mfxEnabled = (mfxMode == 1) || (mfxMode == 0 && g_render_scale > 0.0f && g_render_scale < 0.99f);
+    if (allowSpatialScaler && !padView && mfxEnabled && imageWidth > 0 && imageHeight > 0)
     {
         const uint32 inW = (uint32)presentTexture->width();
         const uint32 inH = (uint32)presentTexture->height();
@@ -621,8 +624,10 @@ void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, Renderer
             {
                 const MTL::PixelFormat inFmt = presentTexture->pixelFormat();
                 const bool inIsSRGB = (inFmt == MTL::PixelFormatRGBA8Unorm_sRGB || inFmt == MTL::PixelFormatBGRA8Unorm_sRGB);
-                const MTL::PixelFormat outFmt = inIsSRGB ? MTL::PixelFormatBGRA8Unorm_sRGB : MTL::PixelFormatBGRA8Unorm;
-                if (!m_spatialScaler || m_spatialInW != inW || m_spatialInH != inH || m_spatialOutW != outW || m_spatialOutH != outH || m_spatialInFmt != inFmt || m_spatialOutFmt != outFmt)
+                MTL::PixelFormat outFmt = inIsSRGB
+                    ? MTL::PixelFormatBGRA8Unorm_sRGB
+                    : (inFmt == MTL::PixelFormatRGB10A2Unorm ? MTL::PixelFormatRGB10A2Unorm : MTL::PixelFormatBGRA8Unorm);
+                if (!m_spatialScaler || m_spatialInW != inW || m_spatialInH != inH || m_spatialOutW != outW || m_spatialOutH != outH || m_spatialInFmt != inFmt)
                 {
                     if (m_spatialScaler) { m_spatialScaler->release(); m_spatialScaler = nullptr; }
                     if (m_spatialScalerOutput) { m_spatialScalerOutput->release(); m_spatialScalerOutput = nullptr; }
@@ -636,6 +641,12 @@ void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, Renderer
                     desc->setOutputHeight(outH);
                     desc->setColorProcessingMode(MTLFX::SpatialScalerColorProcessingModePerceptual);
                     m_spatialScaler = desc->newSpatialScaler(m_device);
+                    if (!m_spatialScaler && outFmt == MTL::PixelFormatRGB10A2Unorm)
+                    {
+                        outFmt = MTL::PixelFormatBGRA8Unorm;
+                        desc->setOutputTextureFormat(outFmt);
+                        m_spatialScaler = desc->newSpatialScaler(m_device);
+                    }
 
                     if (m_spatialScaler)
                     {
@@ -673,12 +684,24 @@ void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, Renderer
                                                shader == RendererOutputShader::s_fxaa_shader_ud ||
                                                shader == RendererOutputShader::s_fxaa_cas_shader_ud ||
                                                shader == RendererOutputShader::s_cas_shader_ud);
+                    const bool wantsFxaa = (shader == RendererOutputShader::s_fxaa_shader ||
+                                            shader == RendererOutputShader::s_fxaa_shader_ud ||
+                                            shader == RendererOutputShader::s_fxaa_cas_shader ||
+                                            shader == RendererOutputShader::s_fxaa_cas_shader_ud);
                     const bool wantsCas = (shader == RendererOutputShader::s_fxaa_cas_shader ||
                                            shader == RendererOutputShader::s_fxaa_cas_shader_ud ||
                                            shader == RendererOutputShader::s_cas_shader ||
                                            shader == RendererOutputShader::s_cas_shader_ud);
                     presentTexture = m_spatialScalerOutput;
-                    if (wantsCas)
+                    if (wantsFxaa && wantsCas)
+                    {
+                        shader = isUpsideDown ? RendererOutputShader::s_fxaa_cas_shader_ud : RendererOutputShader::s_fxaa_cas_shader;
+                    }
+                    else if (wantsFxaa)
+                    {
+                        shader = isUpsideDown ? RendererOutputShader::s_fxaa_shader_ud : RendererOutputShader::s_fxaa_shader;
+                    }
+                    else if (wantsCas)
                     {
                         shader = isUpsideDown ? RendererOutputShader::s_cas_shader_ud : RendererOutputShader::s_cas_shader;
                     }
