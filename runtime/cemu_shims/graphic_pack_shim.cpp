@@ -66,16 +66,14 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             // targets stay consistent with the main framebuffer.
             // A single line of blyt text is rendered into its own RGBA8 (0x01a) + tiled
             // (0x004) strip, from the 293x185 title banner down to 464x28 body text.
-            // Stretching or shrinking font atlases (0x816 / R8) or glyph strips (0x01a + 0x004)
-            // corrupts glyph UVs, causing missing/clipped characters in TextBoxes.
+            // Stretching or shrinking glyph strips (0x01a + 0x004) corrupts glyph UVs,
+            // causing missing/clipped characters in TextBoxes.
+            // (0x816 is World/Weapon Bloom & heatwave; 0x001+0x004 is 640x360 DOF mips —
+            // those MUST scale with g_render_scale and g_aspect_extra, not stay locked at 1x.)
             const bool glyphStrip =
                 (r.formats.size() == 1 && r.formats[0] == 0x01a &&
                  r.tilemodes.size() == 1 && r.tilemodes[0] == 0x004);
-            const bool fontAtlas =
-                (r.formats.size() == 1 &&
-                 (r.formats[0] == 0x816 ||
-                  (r.formats[0] == 0x001 && r.tilemodes.size() == 1 && r.tilemodes[0] == 0x004)));
-            if ((glyphStrip || fontAtlas) && (g_aspect_extra > 1.0f || g_render_scale < 1.0f)) {
+            if (glyphStrip && (g_aspect_extra > 1.0f || g_render_scale < 1.0f)) {
                 o.width = r.ow;
                 o.height = r.oh;
             } else {
