@@ -248,7 +248,7 @@ MetalRenderer::MetalRenderer() : Renderer(RendererAPI::Metal)
     if (m_memoryManager->NeedsReducedLatency())
         m_defaultCommitTreshlod = 64;
     else
-        m_defaultCommitTreshlod = 196;
+        m_defaultCommitTreshlod = 640;
 
     // Occlusion queries
     m_occlusionQuery.m_resultBuffer = m_device->newBuffer(OCCLUSION_QUERY_POOL_SIZE * sizeof(uint64), MTL::ResourceStorageModeShared);
