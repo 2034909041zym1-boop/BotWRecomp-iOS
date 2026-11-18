@@ -4,11 +4,13 @@
 // the inventory preview; rewriting the slots plus those two loads widens the horizontal FOV while
 // the vertical FOV stays as authored. The render targets are widened by the same factor in
 // graphic_pack_shim.cpp, so the extra horizontal area is real geometry rather than a stretch.
+#include <atomic>
 #include <math.h>
 
 #include "hooks.h"
 
 extern float g_aspect_extra;
+extern std::atomic<int> g_grass_lod;
 
 namespace {
 constexpr float k16x9 = 16.0f / 9.0f;
@@ -39,4 +41,19 @@ BOTW_HOOK(0x02e2c578) {
 BOTW_HOOK(0x035b0a38) {
     if (g_aspect_extra <= 1.0f) return;
     c->f[11] = (double)(1.0f / g_aspect_extra);
+}
+
+// Tree 2D billboard LOD distance (Cemu DrawDistance v208: 0.5 default, 0.625 low, 0.75 potato)
+// Also live-applies v208 grass blades density .rodata at 0x1030A774 (1000 default, 1500 low, 2000 potato).
+BOTW_HOOK(0x033cb550) {
+    static int s_applied_lod = -1;
+    const int lod = g_grass_lod.load(std::memory_order_relaxed);
+    if (lod != s_applied_lod) {
+        s_applied_lod = lod;
+        const float grass = (lod == 2) ? 2000.0f : (lod == 1 ? 1500.0f : 1000.0f);
+        mem::wf32(0x1030A774, grass);
+        LOG("[lod] v208 grass_lod=%d (grass=%.0f)", lod, grass);
+    }
+    if (lod == 1) c->f[12] = 0.625;
+    else if (lod == 2) c->f[12] = 0.75;
 }

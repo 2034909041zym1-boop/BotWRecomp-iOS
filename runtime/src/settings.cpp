@@ -1,6 +1,7 @@
 #include "settings.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +16,7 @@
 
 int g_shadow_half = 0;
 int g_aniso_4x = 0;
+std::atomic<int> g_grass_lod{0};
 
 namespace settings {
 namespace {
@@ -27,9 +29,9 @@ void save_locked() {
     FILE* f = fopen(g_path.c_str(), "w");
     if (!f) return;
     fprintf(f, "# BotWRecomp settings (also editable from the in-game menu: touchpad, L3+R3 or F1)\n");
-    fprintf(f, "fps=%d\nscale=%g\ndisplay=%d\nfilter=%d\naa=%d\ngyro=%d\nrumble=%d\nlayout=%d\nshow_fps=%d\nvolume=%d\ntouch=%d\ntouch_hidden=%d\nstick_fixed=%d\nlook_sens=%g\nlook_accel=%d\ntouch_alpha=%d\nmacro_btns=%d\nframe_gen=%d\nshadow_half=%d\naniso_4x=%d\n", g_s.fps,
+    fprintf(f, "fps=%d\nscale=%g\ndisplay=%d\nfilter=%d\naa=%d\ngyro=%d\nrumble=%d\nlayout=%d\nshow_fps=%d\nvolume=%d\ntouch=%d\ntouch_hidden=%d\nstick_fixed=%d\nlook_sens=%g\nlook_accel=%d\ntouch_alpha=%d\nmacro_btns=%d\nframe_gen=%d\nshadow_half=%d\naniso_4x=%d\ngrass_lod=%d\n", g_s.fps,
             g_s.scale, g_s.display, g_s.filter, g_s.aa, g_s.gyro, g_s.rumble, g_s.layout, g_s.show_fps, g_s.volume, g_s.touch, g_s.touch_hidden,
-            g_s.stick_fixed, g_s.look_sens, g_s.look_accel, g_s.touch_alpha, g_s.macro_btns, g_s.frame_gen, g_s.shadow_half, g_s.aniso_4x);
+            g_s.stick_fixed, g_s.look_sens, g_s.look_accel, g_s.touch_alpha, g_s.macro_btns, g_s.frame_gen, g_s.shadow_half, g_s.aniso_4x, g_s.grass_lod);
     fclose(f);
 }
 }  // namespace
@@ -58,6 +60,7 @@ void apply() {
     touch::set_macro_buttons(s.macro_btns != 0);
     g_shadow_half = s.shadow_half;
     g_aniso_4x = s.aniso_4x;
+    g_grass_lod.store(s.grass_lod, std::memory_order_relaxed);
 }
 
 void set(const Settings& s, bool save) {
@@ -103,6 +106,7 @@ void load(const std::string& path) {
                 else if (!strcmp(line, "frame_gen")) g_s.frame_gen = atoi(v) != 0 ? 1 : 0;
                 else if (!strcmp(line, "shadow_half")) g_s.shadow_half = atoi(v) != 0 ? 1 : 0;
                 else if (!strcmp(line, "aniso_4x")) g_s.aniso_4x = atoi(v) != 0 ? 1 : 0;
+                else if (!strcmp(line, "grass_lod")) g_s.grass_lod = std::clamp(atoi(v), 0, 2);
             }
             fclose(f);
             LOG("settings: %s", path.c_str());

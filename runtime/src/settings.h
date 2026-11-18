@@ -32,6 +32,7 @@ struct Settings {
     int frame_gen = 0;     // 0 = off, 1 = 2x optical flow frame generation (experimental)
     int shadow_half = 0;   // 0 = native 1024x1024 shadows, 1 = 512x512 half-res shadows (restart)
     int aniso_4x = 0;      // 0 = native (up to 16x), 1 = cap anisotropic filtering at 4x (restart)
+    int grass_lod = 0;     // 0 = native, 1 = low grass/tree LOD, 2 = very low grass/tree LOD (live)
 };
 
 namespace settings {
