@@ -666,12 +666,24 @@ void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, Renderer
                                                shader == RendererOutputShader::s_fxaa_shader_ud ||
                                                shader == RendererOutputShader::s_fxaa_cas_shader_ud ||
                                                shader == RendererOutputShader::s_cas_shader_ud);
+                    const bool wantsFxaa = (shader == RendererOutputShader::s_fxaa_shader ||
+                                            shader == RendererOutputShader::s_fxaa_shader_ud ||
+                                            shader == RendererOutputShader::s_fxaa_cas_shader ||
+                                            shader == RendererOutputShader::s_fxaa_cas_shader_ud);
                     const bool wantsCas = (shader == RendererOutputShader::s_fxaa_cas_shader ||
                                            shader == RendererOutputShader::s_fxaa_cas_shader_ud ||
                                            shader == RendererOutputShader::s_cas_shader ||
                                            shader == RendererOutputShader::s_cas_shader_ud);
                     presentTexture = m_spatialScalerOutput;
-                    if (wantsCas)
+                    if (wantsFxaa && wantsCas)
+                    {
+                        shader = isUpsideDown ? RendererOutputShader::s_fxaa_cas_shader_ud : RendererOutputShader::s_fxaa_cas_shader;
+                    }
+                    else if (wantsFxaa)
+                    {
+                        shader = isUpsideDown ? RendererOutputShader::s_fxaa_shader_ud : RendererOutputShader::s_fxaa_shader;
+                    }
+                    else if (wantsCas)
                     {
                         shader = isUpsideDown ? RendererOutputShader::s_cas_shader_ud : RendererOutputShader::s_cas_shader;
                     }
@@ -719,11 +731,16 @@ void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, Renderer
     renderCommandEncoder->setFragmentTexture(presentTexture, 0);
     renderCommandEncoder->setFragmentSamplerState((useLinearTexFilter ? m_linearSampler : m_nearestSampler), 0);
 
-    // Set uniforms (Hermite filter reads outputResolution at buffer(0))
+    // Set uniforms (Hermite filter reads outputResolution at buffer(0); copy/FXAA/CAS read dehazeStrength)
     if (shaderIndex == 2 || shaderIndex == 5)
     {
         float outputSize[2] = {(float)imageWidth, (float)imageHeight};
         renderCommandEncoder->setFragmentBytes(outputSize, sizeof(outputSize), 0);
+    }
+    else if (shaderIndex != 1 && shaderIndex != 4)
+    {
+        float dehazeStrength = (!padView && g_render_scale > 0.0f && g_render_scale < 0.99f) ? 1.0f : 0.0f;
+        renderCommandEncoder->setFragmentBytes(&dehazeStrength, sizeof(dehazeStrength), 0);
     }
 
     renderCommandEncoder->setViewport(MTL::Viewport{(double)imageX, (double)imageY, (double)imageWidth, (double)imageHeight, 0.0, 1.0});
