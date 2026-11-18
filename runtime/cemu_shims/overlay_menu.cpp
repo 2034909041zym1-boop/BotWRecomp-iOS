@@ -18,6 +18,9 @@
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 
 void log_write(const char* fmt, ...);
+extern std::atomic<uint32_t> g_last_render_passes;
+extern std::atomic<uint32_t> g_last_clears;
+extern std::atomic<uint32_t> g_last_cmd_bufs;
 namespace threads {
 std::string main_wait_report();
 }
@@ -71,8 +74,12 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
     }
     static int n = 0;
     if (fps > 0 && (n++ % 3) == 0)
-        log_write("[gpu] %.1f fps, %d draws/frame (%d fast), gpu_hw=%.2fms/f (%.2fus/d), %s lp=%d; main thread waits: %s",
-                  fps, drawcalls, fastDrawcalls, gpu_ms_f, us_per_draw,
+        log_write("[gpu] %.1f fps, %d draws/frame (%d fast), passes=%u clears=%u cbuf=%u, gpu_hw=%.2fms/f (%.2fus/d), %s lp=%d; main thread waits: %s",
+                  fps, drawcalls, fastDrawcalls,
+                  g_last_render_passes.load(std::memory_order_relaxed),
+                  g_last_clears.load(std::memory_order_relaxed),
+                  g_last_cmd_bufs.load(std::memory_order_relaxed),
+                  gpu_ms_f, us_per_draw,
                   botw_thermal_state_name(botw_thermal_state()), (int)botw_low_power_mode(),
                   threads::main_wait_report().c_str());
 }

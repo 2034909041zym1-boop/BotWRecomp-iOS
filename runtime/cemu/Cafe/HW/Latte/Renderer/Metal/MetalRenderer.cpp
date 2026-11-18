@@ -36,6 +36,9 @@ extern "C" void botw_wait_while_background();
 extern "C" void botw_record_gpu_time_us(uint64_t us);
 extern "C" void botw_record_frame_gen_present();
 extern float g_render_scale;
+std::atomic<uint32_t> g_last_render_passes{0};
+std::atomic<uint32_t> g_last_clears{0};
+std::atomic<uint32_t> g_last_cmd_bufs{0};
 
 namespace {
 struct ScopedAutoreleasePool
@@ -427,6 +430,9 @@ void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
         botw_wait_while_background();
 
     // Debug
+    g_last_render_passes.store(m_performanceMonitor.m_renderPasses, std::memory_order_relaxed);
+    g_last_clears.store(m_performanceMonitor.m_clears, std::memory_order_relaxed);
+    g_last_cmd_bufs.store(m_performanceMonitor.m_commandBuffers, std::memory_order_relaxed);
     m_performanceMonitor.ResetPerFrameData();
 
     // GPU capture
