@@ -84,11 +84,10 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
                 o.width = ow;
                 o.height = (int)(g_render_scale * r.oh + r.oh_add);
             }
-            // Cemu's 10-bit -> 16-bit UNORM color-buffer upgrade is a *resolution* feature, not an
-            // aspect-ratio feature. In hor+ (wider frustum, scale stays 1.0) rewriting the HDR
-            // buffers changes their bit depth without the matching tonemap path and washes the
-            // picture out. Skip format overrides whenever we only widen.
-            o.format = (g_aspect_extra > 1.0f) ? -1 : r.overwrite_format;
+            // Cemu's 10-bit -> 16-bit UNORM color-buffer upgrade (0x019 -> 0x01f) requires matching
+            // custom shaders; without them it changes buffer bit depth and washes the picture out.
+            // Since FindCustomShaderSource is disabled here, always keep native buffer formats.
+            o.format = -1;
             gp->m_rules.push_back(rule);
         }
         v.push_back(gp);
