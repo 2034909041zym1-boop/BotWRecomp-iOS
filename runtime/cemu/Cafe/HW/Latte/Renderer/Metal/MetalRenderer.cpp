@@ -620,7 +620,8 @@ void MetalRenderer::DrawBackbufferTexture(MTL::Texture* presentTexture, Renderer
             if (m_spatialScalerSupported)
             {
                 const MTL::PixelFormat inFmt = presentTexture->pixelFormat();
-                const MTL::PixelFormat outFmt = m_state.m_usesSRGB ? MTL::PixelFormatBGRA8Unorm_sRGB : MTL::PixelFormatBGRA8Unorm;
+                const bool inIsSRGB = (inFmt == MTL::PixelFormatRGBA8Unorm_sRGB || inFmt == MTL::PixelFormatBGRA8Unorm_sRGB);
+                const MTL::PixelFormat outFmt = inIsSRGB ? MTL::PixelFormatBGRA8Unorm_sRGB : MTL::PixelFormatBGRA8Unorm;
                 if (!m_spatialScaler || m_spatialInW != inW || m_spatialInH != inH || m_spatialOutW != outW || m_spatialOutH != outH || m_spatialInFmt != inFmt || m_spatialOutFmt != outFmt)
                 {
                     if (m_spatialScaler) { m_spatialScaler->release(); m_spatialScaler = nullptr; }
