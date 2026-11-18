@@ -75,7 +75,10 @@ void load(const std::string& path) {
                 if (line[0] == '#' || !eq) continue;
                 *eq = 0;
                 const char* v = eq + 1;
-                if (!strcmp(line, "fps")) g_s.fps = atoi(v) >= 60 ? 60 : 30;
+                if (!strcmp(line, "fps")) {
+                    int f = atoi(v);
+                    g_s.fps = (f >= 60) ? 60 : (f >= 40 ? 40 : 30);
+                }
                 else if (!strcmp(line, "scale")) g_s.scale = (float)atof(v);
                 else if (!strcmp(line, "display")) g_s.display = atoi(v);
                 else if (!strcmp(line, "filter")) g_s.filter = atoi(v);

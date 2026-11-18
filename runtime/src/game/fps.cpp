@@ -9,7 +9,9 @@
 // - Some cutscenes are known to crash above 30 fps; hold those at 30.
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 #include "hooks.h"
 
@@ -22,7 +24,7 @@ int g_dt_n = 0;
 bool g_cap30 = false;      // a cutscene that must run at 30 fps is playing
 uint32_t g_cap_event = 0;  // its event id
 // Guard cold-boot / initial world load at 30 fps so BotW's one-time boot lighting/water state initializes cleanly.
-bool fps60() { return g_target_fps >= 60 && g_boot_world_ready.load(std::memory_order_acquire); }
+bool fps60() { return g_target_fps > 30 && g_boot_world_ready.load(std::memory_order_acquire); }
 
 void data_patches() {
     mem::wf32(0x100775ac, -999.0f);  // Thunderblight Ganon gets thrown off the arena at high fps
@@ -42,7 +44,16 @@ BOTW_HOOK(0x031faae8) {
 // swap has flipped, so a frame that misses a vblank waits for the next one (30 fps). At 60 fps pace
 // with the GPU fence only, so slow frames show at e.g. 45 fps instead of dropping to 30.
 BOTW_HOOK(0x031faccc) {  // stwu r1, -32(r1) on entry
-    if (fps60() && !g_cap30) g_skip_vsync_wait = true;
+    if (fps60() && !g_cap30) {
+        g_skip_vsync_wait = true;
+        if (g_target_fps > 30 && g_target_fps < 60) {
+            static auto s_next = std::chrono::steady_clock::now();
+            const auto period = std::chrono::nanoseconds(1000000000LL / g_target_fps);
+            auto now = std::chrono::steady_clock::now();
+            if (now < s_next) std::this_thread::sleep_until(s_next);
+            s_next = std::max(s_next + period, std::chrono::steady_clock::now());
+        }
+    }
 }
 BOTW_HOOK(0x031facec) {  // lwz r0, 8(r1): swap count, compared against the flip count in r12 next
     if (fps60() && !g_cap30) c->r[12] = c->r[0];

@@ -39,7 +39,14 @@ std::string scale_text(float s) {
 void step(Settings& s, int row, int dir) {
     auto wrap = [](int v, int n) { return (v % n + n) % n; };
     switch (row) {
-        case kFps: s.fps = s.fps >= 60 ? 30 : 60; break;
+        case kFps: {
+            static constexpr int kFpsVals[] = {30, 40, 60};
+            int i = 0;
+            for (int k = 0; k < 3; k++)
+                if (kFpsVals[k] == s.fps) i = k;
+            s.fps = kFpsVals[wrap(i + dir, 3)];
+            break;
+        }
         case kFrameGen: s.frame_gen = s.frame_gen ? 0 : 1; break;
         case kScale: {
             int i = 0;

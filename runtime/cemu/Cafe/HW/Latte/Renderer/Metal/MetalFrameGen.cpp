@@ -41,70 +41,70 @@ struct FGParams {
     float sceneThresh;
 };
 
-inline float3 linear_to_srgb(float3 c) {
-    c = clamp(c, 0.0f, 1.0f);
-    float3 lo = c * 12.92f;
-    float3 hi = 1.055f * pow(c, float3(1.0f / 2.4f)) - 0.055f;
-    return select(hi, lo, c <= 0.0031308f);
+inline half3 linear_to_srgb(half3 c) {
+    c = clamp(c, half(0.0h), half(1.0h));
+    half3 lo = c * half(12.92h);
+    half3 hi = half(1.055h) * pow(c, half3(half(1.0h / 2.4h))) - half(0.055h);
+    return select(hi, lo, c <= half(0.0031308h));
 }
 
-inline float rgb_luma(float3 c) {
+inline half rgb_luma(half3 c) {
     // Perceptual sqrt-luma gives better dark-scene gradient for optical flow
-    return sqrt(max(dot(c, float3(0.299f, 0.587f, 0.114f)), 0.0f));
+    return sqrt(max(dot(c, half3(0.299h, 0.587h, 0.114h)), half(0.0h)));
 }
 
 kernel void fg_copy_frame(
-    texture2d<float, access::read>  src [[texture(0)]],
-    texture2d<float, access::write> dst [[texture(1)]],
+    texture2d<half, access::read>  src [[texture(0)]],
+    texture2d<half, access::write> dst [[texture(1)]],
     constant FGParams& p [[buffer(0)]],
     uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= p.w || gid.y >= p.h) return;
-    float4 c = src.read(gid);
+    half4 c = src.read(gid);
     if (p.isSRGB != 0u) c.rgb = linear_to_srgb(c.rgb);
     dst.write(c, gid);
 }
 
 kernel void fg_downsample_luma1(
-    texture2d<float, access::sample> src [[texture(0)]],
-    texture2d<float, access::write>  dst [[texture(1)]],
+    texture2d<half, access::sample> src [[texture(0)]],
+    texture2d<half, access::write>  dst [[texture(1)]],
     sampler samp [[sampler(0)]],
     constant FGParams& p [[buffer(0)]],
     uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= p.dstW || gid.y >= p.dstH) return;
     float2 uv = (float2(gid) + 0.5f) / float2(p.dstW, p.dstH);
-    float3 c = src.sample(samp, uv).rgb;
-    dst.write(float4(rgb_luma(c), 0.0f, 0.0f, 1.0f), gid);
+    half3 c = src.sample(samp, uv).rgb;
+    dst.write(half4(rgb_luma(c), 0.0h, 0.0h, 1.0h), gid);
 }
 
 kernel void fg_downsample_luma(
-    texture2d<float, access::sample> src [[texture(0)]],
-    texture2d<float, access::write>  dst [[texture(1)]],
+    texture2d<half, access::sample> src [[texture(0)]],
+    texture2d<half, access::write>  dst [[texture(1)]],
     sampler samp [[sampler(0)]],
     constant FGParams& p [[buffer(0)]],
     uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= p.dstW || gid.y >= p.dstH) return;
     float2 uv = (float2(gid) + 0.5f) / float2(p.dstW, p.dstH);
-    float l = src.sample(samp, uv).r;
-    dst.write(float4(l, 0.0f, 0.0f, 1.0f), gid);
+    half l = src.sample(samp, uv).r;
+    dst.write(half4(l, 0.0h, 0.0h, 1.0h), gid);
 }
 
-inline float patch_sad(
-    texture2d<float, access::read> prevTex,
-    texture2d<float, access::read> currTex,
+inline half patch_sad(
+    texture2d<half, access::read> prevTex,
+    texture2d<half, access::read> currTex,
     int2 p, int2 d, int w, int h)
 {
-    float sad = 0.0f;
+    half sad = 0.0h;
     for (int oy = -1; oy <= 1; oy++) {
         int py = clamp(p.y + oy, 0, h - 1);
         int cy = clamp(p.y + oy + d.y, 0, h - 1);
         for (int ox = -1; ox <= 1; ox++) {
             int px = clamp(p.x + ox, 0, w - 1);
             int cx = clamp(p.x + ox + d.x, 0, w - 1);
-            float lp = prevTex.read(uint2(px, py)).r;
-            float lc = currTex.read(uint2(cx, cy)).r;
+            half lp = prevTex.read(uint2(px, py)).r;
+            half lc = currTex.read(uint2(cx, cy)).r;
             sad += abs(lp - lc);
         }
     }
@@ -112,9 +112,9 @@ inline float patch_sad(
 }
 
 kernel void fg_flow_coarse(
-    texture2d<float, access::read>  prevLuma [[texture(0)]],
-    texture2d<float, access::read>  currLuma [[texture(1)]],
-    texture2d<float, access::write> outFlow  [[texture(2)]],
+    texture2d<half, access::read>  prevLuma [[texture(0)]],
+    texture2d<half, access::read>  currLuma [[texture(1)]],
+    texture2d<half, access::write> outFlow  [[texture(2)]],
     constant FGParams& p [[buffer(0)]],
     uint2 gid [[thread_position_in_grid]])
 {
@@ -123,27 +123,41 @@ kernel void fg_flow_coarse(
     int2 pos = int2(gid);
 
     int2 bestD = int2(0, 0);
-    float bestSad = patch_sad(prevLuma, currLuma, pos, bestD, w, h) * 0.92f;
+    half bestSad = patch_sad(prevLuma, currLuma, pos, bestD, w, h) * half(0.92h);
 
-    for (int dy = -3; dy <= 3; dy++) {
-        for (int dx = -3; dx <= 3; dx++) {
+    // 2-step hierarchical search over [-3, +3]: 8 stride-2 probes + 8 stride-1 local probes (17 vs 49)
+    for (int dy = -2; dy <= 2; dy += 2) {
+        for (int dx = -2; dx <= 2; dx += 2) {
             if (dx == 0 && dy == 0) continue;
-            float sad = patch_sad(prevLuma, currLuma, pos, int2(dx, dy), w, h);
-            sad += 0.008f * float(abs(dx) + abs(dy));
+            half sad = patch_sad(prevLuma, currLuma, pos, int2(dx, dy), w, h);
+            sad += half(0.008h) * half(abs(dx) + abs(dy));
             if (sad < bestSad) {
                 bestSad = sad;
                 bestD = int2(dx, dy);
             }
         }
     }
-    outFlow.write(float4(float2(bestD), bestSad / 9.0f, 1.0f), gid);
+    int2 center = bestD;
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            int2 d = center + int2(dx, dy);
+            half sad = patch_sad(prevLuma, currLuma, pos, d, w, h);
+            sad += half(0.008h) * half(abs(d.x) + abs(d.y));
+            if (sad < bestSad) {
+                bestSad = sad;
+                bestD = d;
+            }
+        }
+    }
+    outFlow.write(half4(half2(bestD), bestSad / half(9.0h), 1.0h), gid);
 }
 
 kernel void fg_flow_refine(
-    texture2d<float, access::read>   prevLuma   [[texture(0)]],
-    texture2d<float, access::read>   currLuma   [[texture(1)]],
-    texture2d<float, access::sample> coarseFlow [[texture(2)]],
-    texture2d<float, access::write>  outFlow    [[texture(3)]],
+    texture2d<half, access::read>   prevLuma   [[texture(0)]],
+    texture2d<half, access::read>   currLuma   [[texture(1)]],
+    texture2d<half, access::sample> coarseFlow [[texture(2)]],
+    texture2d<half, access::write>  outFlow    [[texture(3)]],
     sampler samp [[sampler(0)]],
     constant FGParams& p [[buffer(0)]],
     uint2 gid [[thread_position_in_grid]])
@@ -153,16 +167,16 @@ kernel void fg_flow_refine(
     int2 pos = int2(gid);
     float2 uv = (float2(gid) + 0.5f) / float2(p.dstW, p.dstH);
 
-    int2 guess = int2(round(coarseFlow.sample(samp, uv).xy * 2.0f));
+    int2 guess = int2(round(float2(coarseFlow.sample(samp, uv).xy) * 2.0f));
     int2 bestD = int2(0, 0);
-    float bestSad = patch_sad(prevLuma, currLuma, pos, bestD, w, h) * 0.93f;
+    half bestSad = patch_sad(prevLuma, currLuma, pos, bestD, w, h) * half(0.93h);
 
     for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
             int2 d = guess + int2(dx, dy);
             if (d.x == 0 && d.y == 0) continue;
-            float sad = patch_sad(prevLuma, currLuma, pos, d, w, h);
-            sad += 0.004f * float(abs(d.x) + abs(d.y));
+            half sad = patch_sad(prevLuma, currLuma, pos, d, w, h);
+            sad += half(0.004h) * half(abs(d.x) + abs(d.y));
             if (sad < bestSad) {
                 bestSad = sad;
                 bestD = d;
@@ -170,13 +184,13 @@ kernel void fg_flow_refine(
         }
     }
     // Store in full-resolution pixel units (luma2 is 1/4 resolution)
-    outFlow.write(float4(float2(bestD) * 4.0f, bestSad / 9.0f, 1.0f), gid);
+    outFlow.write(half4(half2(bestD) * half(4.0h), bestSad / half(9.0h), 1.0h), gid);
 }
 
 kernel void fg_flow_smooth(
-    texture2d<float, access::read>  currLuma [[texture(0)]],
-    texture2d<float, access::read>  inFlow   [[texture(1)]],
-    texture2d<float, access::write> outFlow  [[texture(2)]],
+    texture2d<half, access::read>  currLuma [[texture(0)]],
+    texture2d<half, access::read>  inFlow   [[texture(1)]],
+    texture2d<half, access::write> outFlow  [[texture(2)]],
     constant FGParams& p [[buffer(0)]],
     uint2 gid [[thread_position_in_grid]])
 {
@@ -184,37 +198,37 @@ kernel void fg_flow_smooth(
     int w = int(p.dstW), h = int(p.dstH);
     int2 pos = int2(gid);
 
-    float lc = currLuma.read(gid).r;
-    float4 centerF = inFlow.read(gid);
+    half lc = currLuma.read(gid).r;
+    half4 centerF = inFlow.read(gid);
 
-    float2 sumF = float2(0.0f);
-    float sumW = 0.0f;
-    float avgSad = 0.0f;
+    half2 sumF = half2(0.0h);
+    half sumW = 0.0h;
+    half avgSad = 0.0h;
 
     for (int oy = -1; oy <= 1; oy++) {
         int ny = clamp(pos.y + oy, 0, h - 1);
         for (int ox = -1; ox <= 1; ox++) {
             int nx = clamp(pos.x + ox, 0, w - 1);
-            float ln = currLuma.read(uint2(nx, ny)).r;
-            float4 fn = inFlow.read(uint2(nx, ny));
-            float ew = exp(-abs(lc - ln) * 18.0f);
+            half ln = currLuma.read(uint2(nx, ny)).r;
+            half4 fn = inFlow.read(uint2(nx, ny));
+            half ew = exp(-abs(lc - ln) * half(18.0h));
             sumF += fn.xy * ew;
             sumW += ew;
             avgSad += fn.z;
         }
     }
-    avgSad /= 9.0f;
-    float2 smoothed = (sumW > 0.0001f) ? (sumF / sumW) : centerF.xy;
-    float conf = 1.0f - smoothstep(p.sceneThresh * 0.55f, p.sceneThresh, avgSad);
+    avgSad /= half(9.0h);
+    half2 smoothed = (sumW > half(0.0001h)) ? (sumF / sumW) : centerF.xy;
+    half conf = half(1.0h) - smoothstep(half(p.sceneThresh * 0.55f), half(p.sceneThresh), avgSad);
     smoothed *= conf;
-    outFlow.write(float4(smoothed, conf, 1.0f), gid);
+    outFlow.write(half4(smoothed, conf, 1.0h), gid);
 }
 
 kernel void fg_interpolate(
-    texture2d<float, access::sample> prevTex  [[texture(0)]],
-    texture2d<float, access::sample> currTex  [[texture(1)]],
-    texture2d<float, access::sample> flowTex  [[texture(2)]],
-    texture2d<float, access::write>  outTex   [[texture(3)]],
+    texture2d<half, access::sample> prevTex  [[texture(0)]],
+    texture2d<half, access::sample> currTex  [[texture(1)]],
+    texture2d<half, access::sample> flowTex  [[texture(2)]],
+    texture2d<half, access::write>  outTex   [[texture(3)]],
     sampler samp [[sampler(0)]],
     constant FGParams& p [[buffer(0)]],
     uint2 gid [[thread_position_in_grid]])
@@ -223,22 +237,22 @@ kernel void fg_interpolate(
     float2 invRes = 1.0f / float2(p.w, p.h);
     float2 uv = (float2(gid) + 0.5f) * invRes;
 
-    float4 flow = flowTex.sample(samp, uv);
-    float2 v = flow.xy * invRes;
-    float conf = flow.z;
+    half4 flow = flowTex.sample(samp, uv);
+    float2 v = float2(flow.xy) * invRes;
+    half conf = flow.z;
 
     float2 uv0 = clamp(uv - 0.5f * v, float2(0.0f), float2(1.0f));
     float2 uv1 = clamp(uv + 0.5f * v, float2(0.0f), float2(1.0f));
-    float4 c0 = prevTex.sample(samp, uv0);
-    float4 c1 = currTex.sample(samp, uv1);
-    float4 cCurr = currTex.sample(samp, uv);
+    half4 c0 = prevTex.sample(samp, uv0);
+    half4 c1 = currTex.sample(samp, uv1);
+    half4 cCurr = currTex.sample(samp, uv);
 
     // Guard against disocclusion double-images and static/zero-flow ghosting
-    float flowMag = length(flow.xy);
-    float diff = dot(abs(c0.rgb - c1.rgb), float3(0.3333f));
-    float wWarp = (flowMag >= 0.35f) ? conf * (1.0f - smoothstep(0.12f, 0.30f, diff)) : 0.0f;
-    float4 blended = 0.5f * (c0 + c1);
-    float4 out = mix(cCurr, blended, wWarp);
+    half flowMag = length(flow.xy);
+    half diff = dot(abs(c0.rgb - c1.rgb), half3(0.3333h));
+    half wWarp = (flowMag >= half(0.35h)) ? conf * (half(1.0h) - smoothstep(half(0.12h), half(0.30h), diff)) : half(0.0h);
+    half4 blended = half(0.5h) * (c0 + c1);
+    half4 out = mix(cCurr, blended, wWarp);
 
     if (p.isSRGB != 0u) out.rgb = linear_to_srgb(out.rgb);
     outTex.write(out, gid);
