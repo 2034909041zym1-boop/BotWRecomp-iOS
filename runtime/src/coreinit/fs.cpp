@@ -50,7 +50,15 @@ std::string host_path(std::string p) {
     if (starts("/vol/code")) return g_game_root + "/code" + n.substr(9);
     if (starts("/vol/meta")) return g_game_root + "/meta" + n.substr(9);
     if (starts("/vol/save")) return g_user_root + "/save" + n.substr(9);
-    if (starts("/vol/aoc")) return g_game_root + "/aoc" + n.substr(8);
+    if (starts("/vol/aoc")) {
+        std::string sub = n.substr(8);
+        std::string aoc_p = g_game_root + "/aoc" + sub;
+        struct stat st;
+        if (stat(aoc_p.c_str(), &st) == 0) return aoc_p;
+        std::string content_p = g_game_root + "/content" + sub;
+        if (stat(content_p.c_str(), &st) == 0) return content_p;
+        return aoc_p;
+    }
     return g_user_root + "/unknown_volume" + n;
 }
 #if TARGET_OS_IOS

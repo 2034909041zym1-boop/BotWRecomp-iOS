@@ -1,6 +1,8 @@
 // proc_ui, sysapp, nn_act, nn_boss, nn_nfp, nn_aoc: the app is always in the foreground, one local
 // account (slot 1), no network services, no amiibo, no DLC.
 #include <algorithm>
+#include <cstring>
+#include <sys/stat.h>
 
 #include "../hle.h"
 #include "../os.h"
@@ -95,13 +97,28 @@ HLE_EXPORT(nn_nfp, InitializeAmiiboSettingsArgsIn__Q2_2nn3nfpFPQ3_2nn3nfp20Amiib
 }
 HLE_EXPORT(nn_nfp, SwitchToAmiiboSettings__Q2_2nn3nfpFRCQ3_2nn3nfp20AmiiboSettingsArgsInPCcUi) { RET(kResultOk); }
 
-// ---- nn::aoc (DLC): no add-on content installed ---------------------------------------------------
+// ---- nn::aoc (DLC): auto-detect game/aoc/0010 or game/content/0010 ------------------------------
+static bool aoc_available() {
+    struct stat st;
+    return stat((g_game_root + "/aoc/0010").c_str(), &st) == 0 ||
+           stat((g_game_root + "/content/0010").c_str(), &st) == 0;
+}
 HLE_EXPORT(nn_aoc, AOC_Initialize) { RET(0); }
 HLE_EXPORT(nn_aoc, AOC_DebugRealDeviceAccess) { RET(0); }
 HLE_EXPORT(nn_aoc, AOC_CalculateWorkBufferSize) { RET(0x80 + std::min(ARG(0), 256u) * 0x61); }
 // AOC_ListTitle(u32* countOut, AOCTitle* list, maxCount, work, workSize)
 HLE_EXPORT(nn_aoc, AOC_ListTitle) {
-    if (ARG(0)) mem::w32(ARG(0), 0);
+    if (aoc_available() && ARG(1) && ARG(2) >= 1) {
+        memset(mem::host(ARG(1)), 0, 0x68);
+        mem::w64(ARG(1) + 0x00, 0x0005000C101C9400ULL);
+        mem::w32(ARG(1) + 0x08, 0x00001C94u);
+        mem::w16(ARG(1) + 0x0C, 0x0050u);
+        strcpy((char*)mem::host(ARG(1) + 0x0E), "/vol/aoc");
+        if (ARG(0)) mem::w32(ARG(0), 1);
+        LOG("nn_aoc: AOC_ListTitle -> 1 DLC title (/vol/aoc)");
+    } else {
+        if (ARG(0)) mem::w32(ARG(0), 0);
+    }
     RET(0);
 }
 // AOC_OpenTitle(char* pathOut, AOCTitle* title, work, workSize): path is at AOCTitle+0x0E
@@ -110,9 +127,10 @@ HLE_EXPORT(nn_aoc, AOC_OpenTitle) {
     RET(0);
 }
 HLE_EXPORT(nn_aoc, AOC_CloseTitle) { RET(0); }
-// AOC_GetPurchaseInfo(u32* out, u64 titleId (r5:r6), u16* ids, count, work, workSize): nothing owned
+// AOC_GetPurchaseInfo(u32* out, u64 titleId (r5:r6), u16* ids, count, work, workSize)
 HLE_EXPORT(nn_aoc, AOC_GetPurchaseInfo) {
-    for (uint32_t i = 0; i < ARG(5); i++) mem::w32(ARG(0) + i * 4, 0);
+    const uint32_t owned = aoc_available() ? 1u : 0u;
+    for (uint32_t i = 0; i < ARG(5); i++) mem::w32(ARG(0) + i * 4, owned);
     RET(0);
 }
 
