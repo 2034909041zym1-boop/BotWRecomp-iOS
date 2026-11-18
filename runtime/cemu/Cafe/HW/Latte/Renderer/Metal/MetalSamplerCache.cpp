@@ -150,8 +150,12 @@ MTL::SamplerState* MetalSamplerCache::GetSamplerState(const LatteContextRegister
 
     auto maxAniso = samplerWords->WORD0.get_MAX_ANISO_RATIO();
 
-    if (maxAniso > 0)
-        samplerDescriptor->setMaxAnisotropy(1 << maxAniso);
+    extern int g_aniso_4x;
+    if (maxAniso > 0) {
+        int aniso = 1 << maxAniso;
+        if (g_aniso_4x) aniso = std::min(aniso, 4);
+        samplerDescriptor->setMaxAnisotropy(aniso);
+    }
 
     // TODO: set lod bias
     //samplerInfo.mipLodBias = (float)iLodBias / 64.0f;

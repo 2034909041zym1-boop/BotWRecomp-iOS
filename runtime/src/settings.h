@@ -30,6 +30,8 @@ struct Settings {
     int touch_alpha = 75;  // virtual button opacity percent (25..100)
     int macro_btns = 1;    // 1 = show quick macro buttons (WB / PR / BT), 0 = hide
     int frame_gen = 0;     // 0 = off, 1 = 2x optical flow frame generation (experimental)
+    int shadow_half = 0;   // 0 = native 1024x1024 shadows, 1 = 512x512 half-res shadows (restart)
+    int aniso_4x = 0;      // 0 = native (up to 16x), 1 = cap anisotropic filtering at 4x (restart)
 };
 
 namespace settings {

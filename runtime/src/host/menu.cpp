@@ -17,7 +17,7 @@ std::atomic<bool> g_open{false};
 int g_cursor = 0;
 
 enum RowId {
-    kFps, kFrameGen, kScale, kAA, kFilter, kDisplay, kShowFps,
+    kFps, kFrameGen, kScale, kAA, kFilter, kShadowHalf, kAniso4x, kDisplay, kShowFps,
     kGyro, kRumble, kLayout, kTouch, kStickFixed, kLookSens, kLookAccel, kTouchAlpha, kMacroBtns,
     kVolume, kClose, kRows
 };
@@ -58,6 +58,8 @@ void step(Settings& s, int row, int dir) {
         case kAA: s.aa = wrap(s.aa + dir, 4); break;
         case kDisplay: s.display = wrap(s.display + dir, 4); break;
         case kFilter: s.filter = wrap(s.filter + dir, 4); break;
+        case kShadowHalf: s.shadow_half = s.shadow_half ? 0 : 1; break;
+        case kAniso4x: s.aniso_4x = s.aniso_4x ? 0 : 1; break;
         case kGyro: s.gyro = !s.gyro; break;
         case kRumble: s.rumble = !s.rumble; break;
         case kLayout: s.layout = !s.layout; break;
@@ -179,6 +181,8 @@ View view() {
     v.rows[kScale] = {"渲染分辨率", scale_text(s.scale)};
     v.rows[kAA] = {"抗锯齿", kAAModes[std::clamp(s.aa, 0, 3)]};
     v.rows[kFilter] = {"缩放滤镜", s.aa > 0 ? "由抗锯齿接管" : kFilters[std::clamp(s.filter, 0, 3)]};
+    v.rows[kShadowHalf] = {"阴影分辨率", s.shadow_half ? "50% 省电 (重启生效)" : "原生 100%"};
+    v.rows[kAniso4x] = {"各向异性过滤", s.aniso_4x ? "限制 4x 省电 (重启生效)" : "原生 (最高16x)"};
     v.rows[kDisplay] = {"画面比例", kDisplays[std::clamp(s.display, 0, 3)]};
     v.rows[kShowFps] = {"性能角标", kShowFpsModes[std::clamp(s.show_fps, 0, 2)]};
     v.rows[kGyro] = {"体感瞄准", s.gyro ? "开启" : "关闭", false, "操控与音频"};

@@ -8,6 +8,7 @@
 
 extern float g_render_scale;    // runtime: --scale
 extern float g_aspect_extra;    // runtime: hor+ horizontal widening (1.0 = off)
+extern int g_shadow_half;       // runtime: settings.ini shadow_half
 
 namespace {
 struct Row {
@@ -30,9 +31,25 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
         std::vector<std::shared_ptr<GraphicPack2>> v;
         // hor+ needs the screen targets resized even at scale 1.0, otherwise the widened camera
         // projects the HUD/menus past the right edge of the 16:9 buffer and they get clipped.
-        if (g_render_scale == 1.0f && g_aspect_extra <= 1.0f) return v;
+        if (g_render_scale == 1.0f && g_aspect_extra <= 1.0f && !g_shadow_half) return v;
         auto gp = std::make_shared<GraphicPack2>();
         gp->m_name = "BotWRecomp resolution";
+        if (g_shadow_half) {
+            for (int shadowDepth : {2, 3, 4}) {
+                TextureRule sr;
+                sr.filter_settings.width = 1024;
+                sr.filter_settings.height = 1024;
+                sr.filter_settings.depth = shadowDepth;
+                sr.filter_settings.format_whitelist = {0x005, 0x011, 0x811};
+                sr.overwrite_settings.width = 512;
+                sr.overwrite_settings.height = 512;
+                gp->m_rules.push_back(sr);
+            }
+        }
+        if (g_render_scale == 1.0f && g_aspect_extra <= 1.0f) {
+            v.push_back(gp);
+            return v;
+        }
         for (const Row& r : kRows) {
             TextureRule rule;
             auto& f = rule.filter_settings;
