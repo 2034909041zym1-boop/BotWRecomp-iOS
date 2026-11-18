@@ -173,7 +173,8 @@ View view() {
     Settings s = settings::get();
     char b[128];
     v.rows.resize(kRows);
-    v.rows[kFps] = {"帧率模式", s.fps >= 60 ? "60 帧 (高负载)" : "30 帧 (流畅省电)", false, "画质与性能"};
+    const char* fps_label = (s.fps >= 60) ? "60 帧 (高负载)" : (s.fps >= 40 ? "40 帧 (均衡/配插帧80)" : "30 帧 (流畅省电)");
+    v.rows[kFps] = {"帧率模式", fps_label, false, "画质与性能"};
     v.rows[kFrameGen] = {"帧生成 (实验性)", s.frame_gen ? "2x 光流插帧 (建议配30帧)" : "关闭"};
     v.rows[kScale] = {"渲染分辨率", scale_text(s.scale)};
     v.rows[kAA] = {"抗锯齿", kAAModes[std::clamp(s.aa, 0, 3)]};
