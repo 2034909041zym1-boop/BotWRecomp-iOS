@@ -11,27 +11,16 @@ void outputShader()
 }
 )";
 
-static const char* kDehazeHelperMtl =
-R"(static inline float3 applyScaleDehaze(float3 rgb, float strength) {
-    if (strength <= 0.0f) return rgb;
-    float luma = dot(rgb, float3(0.2126f, 0.7152f, 0.0722f));
-    float toe = smoothstep(0.0f, 0.45f, luma);
-    float3 graded = clamp(rgb * mix(0.76f, 1.04f, toe), float3(0.0f), float3(1.0f));
-    return mix(rgb, graded, strength);
-}
-)";
-
 const std::string RendererOutputShader::s_copy_shader_source_mtl =
 R"(#include <metal_stdlib>
 using namespace metal;
-)" + std::string(kDehazeHelperMtl) +
-R"(
+
 struct VertexOut {
     float2 uv;
 };
 
-fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]], constant float& dehazeStrength [[buffer(0)]]) {
-	return float4(applyScaleDehaze(textureSrc.sample(samplr, in.uv).rgb, dehazeStrength), 1.0);
+fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
+	return float4(textureSrc.sample(samplr, in.uv).rgb, 1.0);
 }
 )";
 
@@ -328,17 +317,17 @@ static inline float4 sampleFXAA(texture2d<float> tex, sampler s, float2 uv, floa
 }
 )";
 
-const std::string RendererOutputShader::s_fxaa_shader_source_mtl = std::string(kFxaaCommonMtl) + std::string(kDehazeHelperMtl) +
+const std::string RendererOutputShader::s_fxaa_shader_source_mtl = std::string(kFxaaCommonMtl) +
 R"(
-fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]], constant float& dehazeStrength [[buffer(0)]]) {
+fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
     float2 rcpFrame = float2(1.0f) / float2(textureSrc.get_width(), textureSrc.get_height());
-    return float4(applyScaleDehaze(sampleFXAA(textureSrc, samplr, in.uv, rcpFrame).rgb, dehazeStrength), 1.0f);
+    return float4(sampleFXAA(textureSrc, samplr, in.uv, rcpFrame).rgb, 1.0f);
 }
 )";
 
-const std::string RendererOutputShader::s_fxaa_cas_shader_source_mtl = std::string(kFxaaCommonMtl) + std::string(kDehazeHelperMtl) +
+const std::string RendererOutputShader::s_fxaa_cas_shader_source_mtl = std::string(kFxaaCommonMtl) +
 R"(
-fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]], constant float& dehazeStrength [[buffer(0)]]) {
+fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
     float2 rcpFrame = float2(1.0f) / float2(textureSrc.get_width(), textureSrc.get_height());
     float4 aa = sampleFXAA(textureSrc, samplr, in.uv, rcpFrame);
     float3 c = aa.rgb;
@@ -357,21 +346,20 @@ fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[t
     amp = sqrt(amp);
     float3 weight = amp * (-0.165f);
     float3 sharpened = clamp((c + (n + s + w + e) * weight) / (float3(1.0f) + 4.0f * weight), float3(0.0f), float3(1.0f));
-    return float4(applyScaleDehaze(sharpened, dehazeStrength), 1.0f);
+    return float4(sharpened, 1.0f);
 }
 )";
 
 const std::string RendererOutputShader::s_cas_shader_source_mtl =
 R"(#include <metal_stdlib>
 using namespace metal;
-)" + std::string(kDehazeHelperMtl) +
-R"(
+
 struct VertexOut {
     float4 position [[position]];
     float2 uv;
 };
 
-fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]], constant float& dehazeStrength [[buffer(0)]]) {
+fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
     float2 rcpFrame = float2(1.0f) / float2(textureSrc.get_width(), textureSrc.get_height());
     float3 c = textureSrc.sample(samplr, in.uv).rgb;
 
@@ -389,7 +377,7 @@ fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[t
     amp = sqrt(amp);
     float3 weight = amp * (-0.175f);
     float3 sharpened = clamp((c + (n + s + w + e) * weight) / (float3(1.0f) + 4.0f * weight), float3(0.0f), float3(1.0f));
-    return float4(applyScaleDehaze(sharpened, dehazeStrength), 1.0f);
+    return float4(sharpened, 1.0f);
 }
 )";
 
