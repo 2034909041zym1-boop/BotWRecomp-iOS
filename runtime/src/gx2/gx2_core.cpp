@@ -156,6 +156,10 @@ bool GX2WaitTimeStamp(uint64 ts) {
 }
 void GX2Flush() { GX2Command_Flush(0x100, true); }
 bool GX2DrawDone() {
+    if (!t_cb.isDisplayList) {
+        GX2ReserveCmdSpace(2);
+        gx2WriteGather_submit(pm4HeaderType3(IT_HLE_SYNC_ASYNC_OPERATIONS, 1), 0u);
+    }
     GX2Command_Flush(0x100, true);
     wait_gpu(latte::last_submitted(), "gpu: GX2DrawDone");
     return true;

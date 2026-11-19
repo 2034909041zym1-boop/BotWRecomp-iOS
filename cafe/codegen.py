@@ -604,8 +604,8 @@ class Generator:
         pa, pb, pc = P(a_), P(b), P(c_)
 
         def single(expr: str) -> list[str]:
-            # result rounded to single; ps1 mirrors ps0 (HID2[PSE] set on Cafe)
-            return [f"{{ double t_ = round_single({expr}); {F(d)} = t_; {P(d)} = t_; }}"]
+            # result rounded to single (honoring FPSCR.NI); ps1 mirrors ps0 (HID2[PSE] set on Cafe)
+            return [f"{{ double t_ = ppc_to_single(c, {expr}); {F(d)} = t_; {P(d)} = t_; }}"]
 
         dbl = {"fadd": f"{fa} + {fb}", "fsub": f"{fa} - {fb}", "fmul": f"{fa} * {fc}", "fdiv": f"{fa} / {fb}",
                "fmadd": f"fma({fa}, {fc}, {fb})", "fmsub": f"fma({fa}, {fc}, -{fb})",
@@ -672,25 +672,25 @@ class Generator:
         elif op == "ps_div":
             L += self.ps2(d, f"{fa} / {fb}", f"{pa} / {pb}")
         elif op == "ps_madd":
-            L += self.ps2(d, f"(double)(float)({fa} * round25({fc})) + {fb}", f"(double)(float)({pa} * round25({pc})) + {pb}", ftz=True)
+            L += self.ps2(d, f"ppc_to_single(c, {fa} * round25({fc})) + {fb}", f"ppc_to_single(c, {pa} * round25({pc})) + {pb}", ftz=True)
         elif op == "ps_msub":
-            L += self.ps2(d, f"{fa} * round25({fc}) - {fb}", f"{pa} * round25({pc}) - {pb}")
+            L += self.ps2(d, f"{fa} * round25({fc}) - {fb}", f"{pa} * round25({pc}) - {pb}", ftz=True)
         elif op == "ps_nmadd":
-            L += self.ps2(d, f"-({fa} * round25({fc}) + {fb})", f"-({pa} * round25({pc}) + {pb})")
+            L += self.ps2(d, f"-({fa} * round25({fc}) + {fb})", f"-({pa} * round25({pc}) + {pb})", ftz=True)
         elif op == "ps_nmsub":
-            L += self.ps2(d, f"-({fa} * round25({fc}) - {fb})", f"-({pa} * round25({pc}) - {pb})")
+            L += self.ps2(d, f"-({fa} * round25({fc}) - {fb})", f"-({pa} * round25({pc}) - {pb})", ftz=True)
         elif op == "ps_madds0":
-            L.append(f"{{ double k_ = round25({fc}); double x_ = (float)({fa} * k_ + {fb}), y_ = (float)({pa} * k_ + {pb}); {F(d)} = x_; {P(d)} = y_; }}")
+            L.append(f"{{ double k_ = round25({fc}); double x_ = ppc_to_single(c, {fa} * k_ + {fb}), y_ = ppc_to_single(c, {pa} * k_ + {pb}); {F(d)} = x_; {P(d)} = y_; }}")
         elif op == "ps_madds1":
-            L.append(f"{{ double k_ = round25({pc}); double x_ = (float)({fa} * k_ + {fb}), y_ = (float)({pa} * k_ + {pb}); {F(d)} = x_; {P(d)} = y_; }}")
+            L.append(f"{{ double k_ = round25({pc}); double x_ = ppc_to_single(c, {fa} * k_ + {fb}), y_ = ppc_to_single(c, {pa} * k_ + {pb}); {F(d)} = x_; {P(d)} = y_; }}")
         elif op == "ps_muls0":
-            L.append(f"{{ double k_ = round25({fc}); double x_ = (float)({fa} * k_), y_ = (float)({pa} * k_); {F(d)} = x_; {P(d)} = y_; }}")
+            L.append(f"{{ double k_ = round25({fc}); double x_ = ppc_to_single(c, {fa} * k_), y_ = ppc_to_single(c, {pa} * k_); {F(d)} = x_; {P(d)} = y_; }}")
         elif op == "ps_muls1":
-            L.append(f"{{ double k_ = round25({pc}); double x_ = (float)({fa} * k_), y_ = (float)({pa} * k_); {F(d)} = x_; {P(d)} = y_; }}")
+            L.append(f"{{ double k_ = round25({pc}); double x_ = ppc_to_single(c, {fa} * k_), y_ = ppc_to_single(c, {pa} * k_); {F(d)} = x_; {P(d)} = y_; }}")
         elif op == "ps_sum0":
-            L.append(f"{{ double x_ = (float)({fa} + {pb}), y_ = (float)({pc}); {F(d)} = x_; {P(d)} = y_; }}")
+            L.append(f"{{ double x_ = ppc_to_single(c, {fa} + {pb}), y_ = ppc_to_single(c, {pc}); {F(d)} = x_; {P(d)} = y_; }}")
         elif op == "ps_sum1":
-            L.append(f"{{ double x_ = (float)({fc}), y_ = (float)({fa} + {pb}); {F(d)} = x_; {P(d)} = y_; }}")
+            L.append(f"{{ double x_ = ppc_to_single(c, {fc}), y_ = ppc_to_single(c, {fa} + {pb}); {F(d)} = x_; {P(d)} = y_; }}")
         elif op == "ps_sel":
             L.append(f"{{ double x_ = {fa} >= -0.0 ? {fc} : {fb}; double y_ = {pa} >= -0.0 ? {pc} : {pb}; {F(d)} = x_; {P(d)} = y_; }}")
         elif op == "ps_res":
@@ -723,6 +723,5 @@ class Generator:
 
     @staticmethod
     def ps2(d: int, e0: str, e1: str, ftz: bool = False) -> list[str]:
-        if ftz:
-            return [f"{{ double x_ = ftz_single({e0}), y_ = ftz_single({e1}); c->f[{d}] = x_; c->ps1[{d}] = y_; }}"]
-        return [f"{{ double x_ = (float)({e0}), y_ = (float)({e1}); c->f[{d}] = x_; c->ps1[{d}] = y_; }}"]
+        del ftz
+        return [f"{{ double x_ = ppc_to_single(c, {e0}), y_ = ppc_to_single(c, {e1}); c->f[{d}] = x_; c->ps1[{d}] = y_; }}"]

@@ -761,6 +761,8 @@ void apply(input::PadState& s) {
         g.out = {};
         return;
     }
+    if (g.look && !find(g.look_id)) g.look = false, g.vx = g.vy = 0;
+    if (g.stick && !find(g.stick_id)) g.stick = false;
     input::PadState t = contribution(dt);
     g.out = t;
     s.buttons |= t.buttons;

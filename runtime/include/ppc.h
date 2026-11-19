@@ -157,6 +157,14 @@ PPC_INLINE uint32_t f64_to_f32(double d) {
     return (uint32_t)(((x >> 32) & 0xC0000000) | ((x >> 29) & 0x3FFFFFFF));
 }
 PPC_INLINE double round_single(double d) { return (double)(float)d; }
+// FPSCR.NI (bit 29 -> 0x4) flushes single-precision underflow (< FLT_MIN) to signed zero
+// before rounding, including values just below FLT_MIN that would otherwise round up to FLT_MIN.
+PPC_INLINE double ppc_to_single(const PPCContext* c, double d) {
+    uint64_t bits = dbits(d);
+    if ((c->fpscr & 4u) && (bits & 0x7FFFFFFFFFFFFFFFull) < 0x3810000000000000ull)
+        return bitsd(bits & 0x8000000000000000ull);
+    return (double)(float)d;
+}
 // Paired-single multiplies round frC to 25 bits of mantissa first (Gekko/Espresso quirk).
 PPC_INLINE double round25(double d) {
     uint64_t v = dbits(d);
