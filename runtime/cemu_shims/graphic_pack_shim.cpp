@@ -5,6 +5,8 @@
 #include "Cafe/GraphicPack/GraphicPack2.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 
 extern float g_render_scale;    // runtime: --scale
 extern float g_aspect_extra;    // runtime: hor+ horizontal widening (1.0 = off)
@@ -94,4 +96,74 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
         return v;
     }();
     return packs;
+}
+
+namespace {
+struct CustomMslRow {
+    uint64_t baseHash;
+    uint64_t auxHash;
+    GraphicPack2::GP_SHADER_TYPE type;
+    const char* tmpl;
+};
+
+struct CustomMslEntry {
+    uint64_t baseHash;
+    uint64_t auxHash;
+    GraphicPack2::GP_SHADER_TYPE type;
+    std::string source;
+};
+
+void replace_all(std::string& s, const char* from, const std::string& to) {
+    const size_t from_len = std::strlen(from);
+    size_t pos = 0;
+    while ((pos = s.find(from, pos)) != std::string::npos) {
+        s.replace(pos, from_len, to);
+        pos += to.size();
+    }
+}
+
+std::vector<CustomMslEntry> build_custom_msl_shaders() {
+    static const CustomMslRow kMslRows[] = {
+#include "botw_msl_shaders.inc"
+    };
+    char wbuf[32], hbuf[32];
+    std::snprintf(wbuf, sizeof(wbuf), "%.4f", 1280.0 * (double)g_render_scale * (double)g_aspect_extra);
+    std::snprintf(hbuf, sizeof(hbuf), "%.4f", 720.0 * (double)g_render_scale);
+    const std::string w_str(wbuf), h_str(hbuf);
+    const std::string gw_str("1280.0"), gh_str("720.0");
+    const std::string shadow_str(g_shadow_half ? "0.5" : "1.0");
+    const std::string uw_str(g_aspect_extra > 1.0f ? "1" : "0");
+
+    std::vector<CustomMslEntry> out;
+    out.reserve(sizeof(kMslRows) / sizeof(kMslRows[0]));
+    for (const auto& r : kMslRows) {
+        std::string src(r.tmpl);
+        replace_all(src, "$gameWidth", gw_str);
+        replace_all(src, "$gameHeight", gh_str);
+        replace_all(src, "$width", w_str);
+        replace_all(src, "$height", h_str);
+        replace_all(src, "$shadowRes", shadow_str);
+        replace_all(src, "$ultrawideHUDMode", uw_str);
+        replace_all(src, "$fxaa", "1");
+        replace_all(src, "$disableDOF", "0");
+        out.push_back({r.baseHash, r.auxHash, r.type, std::move(src)});
+    }
+    return out;
+}
+}  // namespace
+
+const std::string* GraphicPack2::FindCustomShaderSource(uint64_t baseHash, uint64_t auxHash, GP_SHADER_TYPE type, bool isVulkan, bool isMetal) {
+    (void)isVulkan;
+    if (!isMetal) return nullptr;
+    if (g_render_scale == 1.0f && g_aspect_extra <= 1.0f && !g_shadow_half) return nullptr;
+
+    static const std::vector<CustomMslEntry> kShaders = build_custom_msl_shaders();
+    for (const auto& e : kShaders) {
+        if (e.baseHash == baseHash && e.auxHash == auxHash && e.type == type) {
+            std::fprintf(stderr, "[gfx-pack] custom MSL shader %016llx_%016llx type=%d\n",
+                         (unsigned long long)baseHash, (unsigned long long)auxHash, (int)type);
+            return &e.source;
+        }
+    }
+    return nullptr;
 }
