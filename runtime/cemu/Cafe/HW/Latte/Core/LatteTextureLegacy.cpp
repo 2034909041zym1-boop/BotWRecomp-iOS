@@ -315,14 +315,26 @@ sint32 LatteTexture_getEffectiveWidth(LatteTexture* texture)
 	return texture->width;
 }
 
+sint32 LatteTexture_getEffectiveHeight(LatteTexture* texture)
+{
+	if (texture->overwriteInfo.hasResolutionOverwrite)
+		return texture->overwriteInfo.height;
+	return texture->height;
+}
+
 // returns true if the two textures have the same rescale factor
 bool LatteTexture_doesEffectiveRescaleRatioMatch(LatteTexture* texture1, sint32 mipLevel1, LatteTexture* texture2, sint32 mipLevel2)
 {
 	double widthRatio1 = (double)LatteTexture_getEffectiveWidth(texture1) / (double)texture1->width;
 	double widthRatio2 = (double)LatteTexture_getEffectiveWidth(texture2) / (double)texture2->width;
-	// the difference between the factors must be less than 5%
-	double diff = widthRatio1 / widthRatio2;
-	if (abs(1.0 - diff) > 0.05)
+	double heightRatio1 = (double)LatteTexture_getEffectiveHeight(texture1) / (double)texture1->height;
+	double heightRatio2 = (double)LatteTexture_getEffectiveHeight(texture2) / (double)texture2->height;
+	// the difference between the factors must be less than 5% in both dimensions
+	if (abs(1.0 - (widthRatio1 / widthRatio2)) > 0.05)
+	{
+		return false;
+	}
+	if (abs(1.0 - (heightRatio1 / heightRatio2)) > 0.05)
 	{
 		return false;
 	}

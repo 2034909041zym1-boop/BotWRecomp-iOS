@@ -4,9 +4,12 @@
 #include "Cafe/HW/Latte/ISA/LatteReg.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+
+#include "../src/log.h"
 
 extern float g_render_scale;    // runtime: --scale
 extern float g_aspect_extra;    // runtime: hor+ horizontal widening (1.0 = off)
@@ -80,11 +83,12 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
                 o.height = r.oh;
             } else {
                 const double widthScale = g_render_scale * g_aspect_extra;
-                // GX2 textures expect a 32-pixel pitch alignment; 1280 * 1.2229 = 1565 is not aligned.
-                int ow = (int)(widthScale * r.ow + r.ow_add);  // the pack's expressions truncate
-                if (g_aspect_extra > 1.0f) ow = (ow + 31) & ~31;
+                // Keep exact proportional widths (matching Cemu's Graphics pack rules.txt);
+                // rounding small targets up to 32px in hor+ distorts their width ratio by 20-60%
+                // and breaks rescale-ratio matching across the Bloom/Exposure mip pyramid.
+                int ow = std::max(1, (int)(widthScale * r.ow + r.ow_add));
                 o.width = ow;
-                o.height = (int)(g_render_scale * r.oh + r.oh_add);
+                o.height = std::max(1, (int)(g_render_scale * r.oh + r.oh_add));
             }
             // Cemu's 10-bit -> 16-bit UNORM color-buffer upgrade (0x019 -> 0x01f) requires matching
             // custom shaders; without them it changes buffer bit depth and washes the picture out.
@@ -160,8 +164,8 @@ const std::string* GraphicPack2::FindCustomShaderSource(uint64_t baseHash, uint6
     static const std::vector<CustomMslEntry> kShaders = build_custom_msl_shaders();
     for (const auto& e : kShaders) {
         if (e.baseHash == baseHash && e.auxHash == auxHash && e.type == type) {
-            std::fprintf(stderr, "[gfx-pack] custom MSL shader %016llx_%016llx type=%d\n",
-                         (unsigned long long)baseHash, (unsigned long long)auxHash, (int)type);
+            LOG("[gfx-pack] custom MSL shader %016llx_%016llx type=%d",
+                (unsigned long long)baseHash, (unsigned long long)auxHash, (int)type);
             return &e.source;
         }
     }

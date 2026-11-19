@@ -122,6 +122,17 @@ void LatteSurfaceCopy_copySurfaceNew(const LatteSurfaceCopyParam& src, const Lat
 		}
 		else
 		{
+			static int s_surfSkipLogs = 0;
+			if (s_surfSkipLogs < 20)
+			{
+				s_surfSkipLogs++;
+				sint32 sw, sh, dw, dh;
+				sourceTexture->GetEffectiveSize(sw, sh, sourceView->firstMip);
+				destinationTexture->GetEffectiveSize(dw, dh, destinationView->firstMip);
+				cemuLog_log(LogType::Force, "[surf-copy-skip] src {}x{}({}x{}) fmt={:04x} -> dst {}x{}({}x{}) fmt={:04x}",
+					sourceTexture->width, sourceTexture->height, sw, sh, (uint32)sourceTexture->format,
+					destinationTexture->width, destinationTexture->height, dw, dh, (uint32)destinationTexture->format);
+			}
 			debug_printf("gx2CP_itHLECopySurface(): Copy texture with non-matching effective size\n");
 		}
 		LatteTC_ResetTextureChangeTracker(destinationTexture);
