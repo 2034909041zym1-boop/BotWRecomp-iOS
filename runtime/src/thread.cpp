@@ -175,6 +175,7 @@ void init_context(PPCContext* c, uint32_t stack_top, int core) {
     c->gqr[4] = 0x00060006;
     c->gqr[5] = 0x00070007;
     c->res_addr = 0xFFFFFFFFu;
+    c->fpscr = 4u;  // CafeOS OSCreateThread enables FPSCR.NI (flush single-precision underflow to zero)
     c->core = core;
 }
 
