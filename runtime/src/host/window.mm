@@ -294,6 +294,9 @@ void apply_input() {
         };
         for (auto& [b, v] : btns)
             if (SDL_GetGamepadButton(g_pad, b)) s.buttons |= v;
+        if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) &&
+            SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))
+            s.buttons &= ~(input::BTN_L | input::BTN_R);
         if (SDL_GetGamepadAxis(g_pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000) s.buttons |= input::BTN_ZL;
         if (SDL_GetGamepadAxis(g_pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000) s.buttons |= input::BTN_ZR;
     }
@@ -508,9 +511,12 @@ void run() {
                 auto b = (SDL_GamepadButton)e.gbutton.button;
                 bool both_sticks = (b == SDL_GAMEPAD_BUTTON_LEFT_STICK && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_STICK)) ||
                                    (b == SDL_GAMEPAD_BUTTON_RIGHT_STICK && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_LEFT_STICK));
+                bool both_shoulders = (b == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)) ||
+                                      (b == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
                 SDL_GamepadButton confirm = g_layout == 1 ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
                 SDL_GamepadButton back = g_layout == 1 ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
                 if (b == SDL_GAMEPAD_BUTTON_TOUCHPAD || both_sticks) menu::toggle();
+                else if (both_shoulders && !menu::is_open()) touch::trigger_windbomb();
                 else if (menu::is_open()) {
                     if (b == SDL_GAMEPAD_BUTTON_DPAD_UP) menu::move(-1);
                     else if (b == SDL_GAMEPAD_BUTTON_DPAD_DOWN) menu::move(+1);

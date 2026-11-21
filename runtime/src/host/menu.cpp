@@ -201,7 +201,7 @@ View view() {
     v.rows[kLookAccel] = {"视角非线性加速", s.look_accel ? "开启 (慢稳快甩)" : "关闭 (线性)"};
     snprintf(b, sizeof b, "%d%%", s.touch_alpha);
     v.rows[kTouchAlpha] = {"按键透明度", b};
-    v.rows[kMacroBtns] = {"快捷宏按钮", s.macro_btns ? "显示 (风弹/盾反/林克)" : "隐藏"};
+    v.rows[kMacroBtns] = {"快捷宏按钮", s.macro_btns ? "显示 (一键风弹, 手柄LB+RB)" : "隐藏 (手柄仍可用LB+RB)"};
     snprintf(b, sizeof b, "%d%%", s.volume);
     v.rows[kVolume] = {"游戏音量", b};
     v.rows[kClose] = {"关闭设置菜单", "", true};

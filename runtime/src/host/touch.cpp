@@ -84,7 +84,7 @@ struct Control {
     DrawItem d;
     uint32_t mask = 0;
     bool dpad = false, menu = false, toggle = false;
-    uint8_t macro_id = 0;  // 0 none, 1 WB (windbomb), 2 PR (parry), 3 BT (bullet time)
+    uint8_t macro_id = 0;  // 0 none, 1 WB (windbomb)
 };
 struct State {
     float w = 0, h = 0, density = 0, safe[4] = {-1, -1, -1, -1};
@@ -274,15 +274,12 @@ void update_layout() {
     add(DrawItem::kCircle, W * 0.5f + 62 * u, ty, sr, 0, "+", input::BTN_PLUS);
     add(DrawItem::kToggle, W * 0.5f + 124 * u, ty, 14 * u, 0, "", 0);  // show / hide the controls
     g.ctrls.back().toggle = true;
-    // quick macro buttons in the top-right clear gap between eye toggle and ZR/R
+    // quick windbomb macro button in the top-right clear gap between eye toggle and ZR/R
     {
-        const float mw = 19 * u, mh = 13 * u, mgap = 6 * u;
+        const float mw = 22 * u, mh = 13 * u;
         const float mx0 = W * 0.5f + 178 * u;
-        const char* mlabels[3] = {"WB", "PR", "BT"};
-        for (uint8_t mi = 0; mi < 3; mi++) {
-            add(DrawItem::kPill, mx0 + mi * (2 * mw + mgap), ty, mw, mh, mlabels[mi], 0);
-            g.ctrls.back().macro_id = mi + 1;
-        }
+        add(DrawItem::kPill, mx0, ty, mw, mh, "WB", 0);
+        g.ctrls.back().macro_id = 1;
     }
     // D-pad on the left, under L, above the stick area
     const float dr = 40 * u;
@@ -340,6 +337,47 @@ void stick_to(float x, float y) {  // fixed base or floating base depending on s
     g.kx = x, g.ky = y;
 }
 
+void macro_step(input::PadState& t) {
+    if (g.macro_id != 1) {
+        g.macro_id = 0;
+        return;
+    }
+    const double ms = (SDL_GetTicksNS() - g.macro_t0_ns) * 1e-6;
+    const WbTimings& w = g_wb;
+    if (ms < w.zl_end) {
+        t.buttons |= input::BTN_ZL;
+        if (t.ly < 0.8f) t.ly = 1.0f;
+    } else if (ms < w.hop_end) {
+        t.buttons |= input::BTN_ZL | input::BTN_X;
+        if (t.ly < 0.8f) t.ly = 1.0f;
+    } else if (ms < w.round_end) {
+        t.buttons |= input::BTN_L;
+        if (t.ly < 0.8f) t.ly = 1.0f;
+    } else if (ms < w.fwd_end) {
+        if (t.ly < 0.8f) t.ly = 1.0f;
+    } else if (ms < w.up1_start) {
+        for (int i = 0; i < w.zr_count; i++) {
+            const double s0 = w.fwd_end + i * (w.zr_dur + w.zr_gap);
+            if (ms >= s0 && ms < s0 + w.zr_dur) {
+                t.buttons |= input::BTN_ZR;
+                break;
+            }
+        }
+    } else if (ms >= w.up1_start && ms < w.up1_end) {
+        t.buttons |= input::BTN_UP;
+        if (ms >= w.rx1_start && ms < w.rx1_end) t.rx = 1.0f;
+    } else if (ms >= w.sq_start && ms < w.sq_end) {
+        t.buttons |= input::BTN_L;
+    } else if (ms >= w.up2_start && ms < w.up2_end) {
+        t.buttons |= input::BTN_UP;
+        if (ms >= w.rx2_start && ms < w.rx2_end) t.rx = -1.0f;
+    } else if (ms >= w.det_start && ms < w.det_end) {
+        t.buttons |= input::BTN_L;
+    } else if (ms >= w.det_end) {
+        g.macro_id = 0;
+    }
+}
+
 input::PadState contribution(float dt) {
     input::PadState t;
     for (auto& f : g.fingers)
@@ -371,57 +409,7 @@ input::PadState contribution(float dt) {
             }
         }
     }
-    if (g.macro_id != 0) {
-        const double ms = (SDL_GetTicksNS() - g.macro_t0_ns) * 1e-6;
-        if (g.macro_id == 1) {  // WB: Ledge Front-Hop Windbomb (configurable via Documents/wb_macro.ini)
-            const WbTimings& w = g_wb;
-            if (ms < w.zl_end) {
-                t.buttons |= input::BTN_ZL;
-                if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < w.hop_end) {
-                t.buttons |= input::BTN_ZL | input::BTN_X;
-                if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < w.round_end) {
-                t.buttons |= input::BTN_L;
-                if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < w.fwd_end) {
-                if (t.ly < 0.8f) t.ly = 1.0f;
-            } else if (ms < w.up1_start) {
-                for (int i = 0; i < w.zr_count; i++) {
-                    const double s0 = w.fwd_end + i * (w.zr_dur + w.zr_gap);
-                    if (ms >= s0 && ms < s0 + w.zr_dur) {
-                        t.buttons |= input::BTN_ZR;
-                        break;
-                    }
-                }
-            } else if (ms >= w.up1_start && ms < w.up1_end) {
-                t.buttons |= input::BTN_UP;
-                if (ms >= w.rx1_start && ms < w.rx1_end) t.rx = 1.0f;
-            } else if (ms >= w.sq_start && ms < w.sq_end) {
-                t.buttons |= input::BTN_L;
-            } else if (ms >= w.up2_start && ms < w.up2_end) {
-                t.buttons |= input::BTN_UP;
-                if (ms >= w.rx2_start && ms < w.rx2_end) t.rx = -1.0f;
-            } else if (ms >= w.det_start && ms < w.det_end) {
-                t.buttons |= input::BTN_L;
-            } else if (ms >= w.det_end) {
-                g.macro_id = 0;
-            }
-        } else if (g.macro_id == 2) {  // PR: Parry (ZL shield + A parry)
-            if (ms < 180.0) {
-                t.buttons |= input::BTN_ZL;
-                if (ms >= 60.0 && ms < 160.0) t.buttons |= input::BTN_A;
-            } else {
-                g.macro_id = 0;
-            }
-        } else if (g.macro_id == 3) {  // BT: Bullet Time (X jump -> ZR draw bow)
-            if (ms < 90.0) { t.buttons |= input::BTN_X; }
-            else if (ms >= 110.0 && ms < 420.0) { t.buttons |= input::BTN_ZR; }
-            else if (ms >= 420.0) { g.macro_id = 0; }
-        } else {
-            g.macro_id = 0;
-        }
-    }
+    if (g.macro_id != 0) macro_step(t);
     return t;
 }
 
@@ -660,6 +648,17 @@ void set_wb_config_path(const std::string& path) {
     g_wb_cfg_path = path;
     load_wb_cfg_locked();
 }
+
+void trigger_windbomb() {
+    std::lock_guard<std::mutex> l(g_lock);
+    if (g.macro_id == 1) {
+        g.macro_id = 0;
+    } else {
+        load_wb_cfg_locked();
+        g.macro_id = 1;
+        g.macro_t0_ns = SDL_GetTicksNS();
+    }
+}
 bool active() { return g_mode == 1 || (g_mode == 0 && !g_controller); }
 
 void event(const SDL_Event& e) {
@@ -758,7 +757,16 @@ void apply(input::PadState& s) {
         if (was_hidden) g.stick = g.look = false, g.vx = g.vy = 0, g.macro_id = 0;
     }
     if (!vis || g_hidden) {
-        g.out = {};
+        input::PadState t{};
+        if (g.macro_id != 0) {
+            macro_step(t);
+            s.buttons |= t.buttons;
+            s.lx += t.lx;
+            s.ly += t.ly;
+            s.rx += t.rx;
+            s.ry += t.ry;
+        }
+        g.out = t;
         return;
     }
     if (g.look && !find(g.look_id)) g.look = false, g.vx = g.vy = 0;
