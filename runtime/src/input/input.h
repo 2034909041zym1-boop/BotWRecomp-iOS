@@ -31,5 +31,8 @@ struct Motion {
 };
 void motion_sensor(bool gyro, const float data[3], uint64_t timestamp_ns);  // SDL units: rad/s, m/s^2
 void motion_reset(bool flat = false);
+void set_stick_gyro(bool on);
+bool stick_gyro_enabled();
+void motion_stick(float rx, float ry, float dt);
 bool motion(Motion* out);  // false until a controller with motion sensors reports
 }  // namespace input

@@ -297,6 +297,9 @@ void apply_input() {
         if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) &&
             SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))
             s.buttons &= ~(input::BTN_L | input::BTN_R);
+        if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) &&
+            SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_STICK))
+            s.buttons &= ~(input::BTN_R | input::BTN_STICK_R);
         if (SDL_GetGamepadAxis(g_pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000) s.buttons |= input::BTN_ZL;
         if (SDL_GetGamepadAxis(g_pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000) s.buttons |= input::BTN_ZR;
     }
@@ -364,6 +367,17 @@ void apply_input() {
     s.ly = std::clamp(s.ly, -1.f, 1.f);
     s.rx = std::clamp(s.rx, -1.f, 1.f);
     s.ry = std::clamp(s.ry, -1.f, 1.f);
+    {
+        static uint64_t last_ns = 0;
+        uint64_t now_ns = SDL_GetTicksNS();
+        float dt = last_ns ? (float)(now_ns - last_ns) * 1e-9f : 0.016f;
+        last_ns = now_ns;
+        if (input::stick_gyro_enabled() && !menu::is_open()) {
+            input::motion_stick(s.rx, s.ry, dt);
+            s.rx = 0.0f;
+            s.ry = 0.0f;
+        }
+    }
     input::set_gamepad(s);
 }
 }  // namespace
@@ -513,10 +527,17 @@ void run() {
                                    (b == SDL_GAMEPAD_BUTTON_RIGHT_STICK && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_LEFT_STICK));
                 bool both_shoulders = (b == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)) ||
                                       (b == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+                bool rb_r3 = (b == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_STICK)) ||
+                             (b == SDL_GAMEPAD_BUTTON_RIGHT_STICK && SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
                 SDL_GamepadButton confirm = g_layout == 1 ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
                 SDL_GamepadButton back = g_layout == 1 ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
                 if (b == SDL_GAMEPAD_BUTTON_TOUCHPAD || both_sticks) menu::toggle();
                 else if (both_shoulders && !menu::is_open()) touch::trigger_windbomb();
+                else if (rb_r3 && !menu::is_open()) {
+                    bool next = !input::stick_gyro_enabled();
+                    input::set_stick_gyro(next);
+                    LOG("input: stick gyro %s", next ? "ON" : "OFF");
+                }
                 else if (menu::is_open()) {
                     if (b == SDL_GAMEPAD_BUTTON_DPAD_UP) menu::move(-1);
                     else if (b == SDL_GAMEPAD_BUTTON_DPAD_DOWN) menu::move(+1);

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <mutex>
 
+#include "../input/input.h"
 #include "../settings.h"
 
 extern float g_render_scale;  // main.cpp: the scale this run renders at
@@ -18,7 +19,7 @@ int g_cursor = 0;
 
 enum RowId {
     kFps, kFrameGen, kScale, kMetalFX, kAA, kFilter, kShadowHalf, kAniso4x, kGrassLod, kDisplay, kShowFps,
-    kGyro, kRumble, kLayout, kTouch, kStickFixed, kLookSens, kLookAccel, kTouchAlpha, kMacroBtns,
+    kGyro, kStickGyro, kRumble, kLayout, kTouch, kStickFixed, kLookSens, kLookAccel, kTouchAlpha, kMacroBtns,
     kVolume, kClose, kRows
 };
 const float kScales[] = {0, 0.5f, 0.75f, 0.8f, 1, 1.5f, 2, 2.5f, 3};  // 0 = fit the display
@@ -63,6 +64,7 @@ void step(Settings& s, int row, int dir) {
         case kAniso4x: s.aniso_4x = s.aniso_4x ? 0 : 1; break;
         case kGrassLod: s.grass_lod = wrap(s.grass_lod + dir, 3); break;
         case kGyro: s.gyro = !s.gyro; break;
+        case kStickGyro: input::set_stick_gyro(!input::stick_gyro_enabled()); break;
         case kRumble: s.rumble = !s.rumble; break;
         case kLayout: s.layout = !s.layout; break;
         case kTouch: s.touch = wrap(s.touch + dir, 3), s.touch_hidden = false; break;
@@ -192,6 +194,7 @@ View view() {
     v.rows[kDisplay] = {"画面比例", kDisplays[std::clamp(s.display, 0, 3)]};
     v.rows[kShowFps] = {"性能角标", kShowFpsModes[std::clamp(s.show_fps, 0, 2)]};
     v.rows[kGyro] = {"体感瞄准", s.gyro ? "开启" : "关闭", false, "操控与音频"};
+    v.rows[kStickGyro] = {"摇杆模拟陀螺仪", input::stick_gyro_enabled() ? "开启 (右摇杆, RB+R3切换)" : "关闭 (RB+R3切换)"};
     v.rows[kRumble] = {"手柄震动", s.rumble ? "开启" : "关闭"};
     v.rows[kLayout] = {"按键布局", s.layout ? "Xbox (A在下)" : "任天堂 (A在右)"};
     v.rows[kTouch] = {"虚拟按键", s.touch == 1 ? "常开" : s.touch == 2 ? "关闭" : "自动 (连手柄隐藏)"};

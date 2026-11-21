@@ -1,6 +1,8 @@
 // GamePad motion (gyro / accelerometer / attitude) from a host controller's sensors, e.g. the
 // DualSense. Port of Cemu's input/motion (MahonySensorFusion, WiiUMotionHandler, MotionSample) and
 // its SDL sensor handling (SDLControllerProvider), MPL-2.0, so values match what games expect there.
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <mutex>
 
@@ -79,6 +81,7 @@ void x_vector(const Quat& q, float* v) {
 }
 
 std::mutex g_lock;
+std::atomic<bool> g_stick_gyro{false};
 Mahony g_imu;
 bool g_valid = false, g_has_acc = false, g_has_gyro = false;
 uint64_t g_ts_acc = 0, g_ts_gyro = 0, g_ts_integrate = 0;
@@ -86,12 +89,9 @@ float g_acc[3]{}, g_prev_acc[3]{}, g_gyro[3]{};  // handler space
 float g_sens_acc[3]{}, g_sens_gyro[3]{};       // latest tracked samples
 Motion g_out;
 
-void integrate(float dt) {
-    // WiiUMotionHandler::processMotionSample(dt, gyro, acc.x, -acc.y, -acc.z)
-    float ax = g_sens_acc[0], ay = -g_sens_acc[1], az = -g_sens_acc[2];
-    for (int k = 0; k < 3; k++) g_prev_acc[k] = g_acc[k], g_gyro[k] = g_sens_gyro[k];
+void update_output(float ax, float ay, float az) {
+    for (int k = 0; k < 3; k++) g_prev_acc[k] = g_acc[k];
     g_acc[0] = ax, g_acc[1] = ay, g_acc[2] = az;
-    g_imu.update(dt, g_gyro[0], g_gyro[1], g_gyro[2], ax, ay, az);
 
     Motion& m = g_out;
     m.acc[0] = -g_acc[0], m.acc[1] = -g_acc[1], m.acc[2] = g_acc[2];
@@ -109,9 +109,18 @@ void integrate(float dt) {
     x_vector(g_imu.q * Quat::angle_axis(kPi / 2, 0, 1, 0), m.dir + 6);
     g_valid = true;
 }
+
+void integrate(float dt) {
+    // WiiUMotionHandler::processMotionSample(dt, gyro, acc.x, -acc.y, -acc.z)
+    float ax = g_sens_acc[0], ay = -g_sens_acc[1], az = -g_sens_acc[2];
+    for (int k = 0; k < 3; k++) g_gyro[k] = g_sens_gyro[k];
+    g_imu.update(dt, g_gyro[0], g_gyro[1], g_gyro[2], ax, ay, az);
+    update_output(ax, ay, az);
+}
 }  // namespace
 
 void motion_sensor(bool gyro, const float data[3], uint64_t ts) {
+    if (g_stick_gyro.load(std::memory_order_relaxed)) return;
     std::lock_guard<std::mutex> l(g_lock);
     uint64_t& last = gyro ? g_ts_gyro : g_ts_acc;
     if (ts <= last) return;
@@ -145,6 +154,48 @@ void motion_reset(bool flat) {
     if (flat) g_imu.q = {1, 0, 0, 0};  // neutral flat GamePad pose (no initial slew)
     g_valid = g_has_acc = g_has_gyro = false;
     g_ts_acc = g_ts_gyro = g_ts_integrate = 0;
+}
+
+void set_stick_gyro(bool on) {
+    if (on == g_stick_gyro.load(std::memory_order_relaxed)) return;
+    g_stick_gyro.store(on, std::memory_order_relaxed);
+    motion_reset(on);
+    if (on) motion_stick(0.0f, 0.0f, 0.016f);
+}
+
+bool stick_gyro_enabled() { return g_stick_gyro.load(std::memory_order_relaxed); }
+
+void motion_stick(float rx, float ry, float dt) {
+    std::lock_guard<std::mutex> l(g_lock);
+    dt = std::clamp(dt, 0.001f, 0.05f);
+    constexpr float kSpeed = 2.5f;  // rad/s at full stick deflection
+    g_gyro[0] = -ry * kSpeed;
+    g_gyro[1] = -rx * kSpeed;
+    g_gyro[2] = 0.0f;
+    const Quat& q = g_imu.q;
+    float ax = 2.0f * (q.x * q.z - q.w * q.y);
+    float ay = 2.0f * (q.y * q.z + q.w * q.x);
+    float az = 2.0f * (q.w * q.w + q.z * q.z) - 1.0f;
+    // Integrate directly without bias adaptation so virtual pose never drifts
+    for (int k = 0; k < 3; k++) g_imu.bias[k] = 0.0f;
+    Quat d = q * Quat{0, g_gyro[0] * 0.5f * dt, g_gyro[1] * 0.5f * dt, 0};
+    g_imu.q.w += d.w, g_imu.q.x += d.x, g_imu.q.y += d.y, g_imu.q.z += d.z;
+    g_imu.q.normalize_xyzw();
+    float pr = g_imu.roll, pp = g_imu.pitch, py = g_imu.yaw;
+    g_imu.roll = atan2f(2 * (g_imu.q.z * g_imu.q.w + g_imu.q.x * g_imu.q.y),
+                        1 - 2 * (g_imu.q.w * g_imu.q.w + g_imu.q.x * g_imu.q.x));
+    float sp = 2 * (g_imu.q.z * g_imu.q.x - g_imu.q.y * g_imu.q.w);
+    g_imu.pitch = fabsf(sp) >= 1 ? copysignf(kPi / 2, sp) : asinf(sp);
+    g_imu.yaw = atan2f(2 * (g_imu.q.z * g_imu.q.y + g_imu.q.w * g_imu.q.x),
+                       1 - 2 * (g_imu.q.x * g_imu.q.x + g_imu.q.y * g_imu.q.y));
+    auto winding = [](float prev, float now) { return now - prev > kPi ? -1 : prev - now > kPi ? 1 : 0; };
+    g_imu.roll_w += winding(pr, g_imu.roll);
+    g_imu.pitch_w += winding(pp, g_imu.pitch);
+    g_imu.yaw_w += winding(py, g_imu.yaw);
+    ax = 2.0f * (g_imu.q.x * g_imu.q.z - g_imu.q.w * g_imu.q.y);
+    ay = 2.0f * (g_imu.q.y * g_imu.q.z + g_imu.q.w * g_imu.q.x);
+    az = 2.0f * (g_imu.q.w * g_imu.q.w + g_imu.q.z * g_imu.q.z) - 1.0f;
+    update_output(ax, ay, az);
 }
 
 bool motion(Motion* out) {
