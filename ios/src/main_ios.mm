@@ -3,6 +3,7 @@
 // the app's Documents (copied there with Finder file sharing), prepares the sandbox paths and hands
 // over to the shared runtime entry (runtime/src/main.cpp, compiled with -Dmain=botw_main).
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -10,6 +11,7 @@
 #include <os/proc.h>
 #include <sys/sysctl.h>
 
+#include <atomic>
 #include <string>
 #include <thread>
 #include <vector>
@@ -67,6 +69,9 @@ void start_stats_thread(std::string device) {
 }
 
 int ios_main(int argc, char** argv) {
+    static std::atomic<bool> entered{false};
+    if (entered.exchange(true)) return 0;
+
     // landscape only; system edge gestures need a second swipe while playing
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "2");
@@ -125,6 +130,34 @@ int ios_main(int argc, char** argv) {
     cargv.push_back(nullptr);
     return botw_main((int)args.size(), cargv.data());
 }
+
+// SDL3 (3.4.18) SDLUIKitSceneDelegate re-triggers postFinishLaunch -> ios_main when AirPlay / external
+// display mirroring connects a secondary UIScene, crashing on double mem::init() / dispatch::init().
+using SceneWillConnectFn = void (*)(id, SEL, UIScene*, UISceneSession*, UISceneConnectionOptions*);
+static SceneWillConnectFn g_orig_scene_will_connect = nullptr;
+
+static void guarded_scene_will_connect(id self, SEL _cmd, UIScene* scene, UISceneSession* session,
+                                       UISceneConnectionOptions* options) {
+    if (session.role && ![session.role isEqualToString:UIWindowSceneSessionRoleApplication]) {
+        return;
+    }
+    static bool main_scene_connected = false;
+    if (main_scene_connected) return;
+    main_scene_connected = true;
+    if (g_orig_scene_will_connect) g_orig_scene_will_connect(self, _cmd, scene, session, options);
+}
+
+static void install_scene_guard() {
+    Class cls = objc_getClass("SDLUIKitSceneDelegate");
+    if (!cls) return;
+    SEL sel = @selector(scene:willConnectToSession:options:);
+    Method m = class_getInstanceMethod(cls, sel);
+    if (!m) return;
+    g_orig_scene_will_connect = (SceneWillConnectFn)method_setImplementation(m, (IMP)guarded_scene_will_connect);
+}
 }  // namespace
 
-int main(int argc, char** argv) { return SDL_RunApp(argc, argv, ios_main, nullptr); }
+int main(int argc, char** argv) {
+    install_scene_guard();
+    return SDL_RunApp(argc, argv, ios_main, nullptr);
+}
