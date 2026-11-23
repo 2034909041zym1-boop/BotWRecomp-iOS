@@ -2312,13 +2312,19 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
                     src->add("sample");
            	    if (isCompare)
          			src->add("_compare");
-          		src->addFmt("(samplr{}, ", texInstruction->textureFetch.textureIndex);
-           	}
-    	}
-    	else
-    	{
-    	    src->addFmt(", samplr{}, ", texInstruction->textureFetch.textureIndex);
-    	}
+           		if (shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[texInstruction->textureFetch.textureIndex] < 16)
+           			src->addFmt("(samplr{}, ", texInstruction->textureFetch.textureIndex);
+           		else
+           			src->add("(_cemu_extra_samplr, ");
+            	}
+     	}
+     	else
+     	{
+     	    if (shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[texInstruction->textureFetch.textureIndex] < 16)
+     	        src->addFmt(", samplr{}, ", texInstruction->textureFetch.textureIndex);
+     	    else
+     	        src->add(", _cemu_extra_samplr, ");
+     	}
 
     	// for textureGather() add shift (todo: depends on rounding mode set in sampler registers?)
     	if (texOpcode == GPU7_TEX_INST_FETCH4)
@@ -2708,7 +2714,10 @@ static void _emitTEXGetCompTexLodCode(LatteDecompilerShaderContext* shaderContex
 	}
 	else
 	{
-		src->addFmt("float lod = tex{}.calculate_unclamped_lod(samplr{}, ", textureIndex, textureIndex);
+		if (shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[textureIndex] < 16)
+			src->addFmt("float lod = tex{}.calculate_unclamped_lod(samplr{}, ", textureIndex, textureIndex);
+		else
+			src->addFmt("float lod = tex{}.calculate_unclamped_lod(_cemu_extra_samplr, ", textureIndex);
 		if (components > 1)
 			src->addFmt("float{}(", components);
 		for (sint32 i = 0; i < components; ++i)
@@ -4041,6 +4050,15 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 	src->addFmt("{} {} main0(", functionType, outputTypeName);
 	LatteDecompiler::emitInputs(shaderContext, isRectVertexShader, usesGeometryShader, fetchVertexManually);
 	src->add(") {" _CRLF);
+	for (sint32 i = 0; i < LATTE_NUM_TEX_UNITS; i++)
+	{
+		if (shaderContext->shader->textureUnitMask & (1 << i) &&
+			shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[i] >= 16)
+		{
+			src->add("constexpr sampler _cemu_extra_samplr(coord::normalized, filter::linear, address::clamp_to_edge);" _CRLF);
+			break;
+		}
+	}
 	if (fetchVertexManually && (shader->shaderType == LatteConst::ShaderType::Vertex || shader->shaderType == LatteConst::ShaderType::Geometry))
 	{
 	    if (shader->shaderType == LatteConst::ShaderType::Vertex)

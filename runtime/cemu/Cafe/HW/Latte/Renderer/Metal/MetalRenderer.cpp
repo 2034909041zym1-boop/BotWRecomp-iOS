@@ -1952,6 +1952,8 @@ void MetalRenderer::SetTexture(MTL::RenderCommandEncoder* renderCommandEncoder, 
 
 void MetalRenderer::SetSamplerState(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::SamplerState* samplerState, uint32 index)
 {
+    if (index >= MAX_MTL_SAMPLERS)
+        return;
     auto& boundSamplerState = m_state.m_encoderState.m_samplers[shaderType][index];
     if (samplerState == boundSamplerState)
         return;

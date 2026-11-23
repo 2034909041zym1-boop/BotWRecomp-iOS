@@ -514,7 +514,8 @@ namespace LatteDecompiler
     			//uint32 textureBinding = shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[i] % 31;
     			//uint32 samplerBinding = textureBinding % 16;
     			src->addFmt(" tex{} [[texture({})]]", i, binding);
-    			src->addFmt(", sampler samplr{} [[sampler({})]]", i, binding);
+    			if (binding < 16)
+    			    src->addFmt(", sampler samplr{} [[sampler({})]]", i, binding);
 			}
 		}
 	}
