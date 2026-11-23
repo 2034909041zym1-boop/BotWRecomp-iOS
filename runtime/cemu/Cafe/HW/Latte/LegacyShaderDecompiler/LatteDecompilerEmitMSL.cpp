@@ -4050,9 +4050,9 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 	src->addFmt("{} {} main0(", functionType, outputTypeName);
 	LatteDecompiler::emitInputs(shaderContext, isRectVertexShader, usesGeometryShader, fetchVertexManually);
 	src->add(") {" _CRLF);
-	for (sint32 i = 0; i < LATTE_NUM_TEX_UNITS; i++)
+	for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
 	{
-		if (shaderContext->shader->textureUnitMask & (1 << i) &&
+		if (shaderContext->output->textureUnitMask[i] &&
 			shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[i] >= 16)
 		{
 			src->add("constexpr sampler _cemu_extra_samplr(coord::normalized, filter::linear, address::clamp_to_edge);" _CRLF);
