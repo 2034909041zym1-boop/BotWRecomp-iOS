@@ -2487,7 +2487,9 @@ void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
 		}
 		if (shader->uniform.loc_fragCoordScale >= 0)
 		{
-			LatteMRT::GetCurrentFragCoordScale(GET_UNIFORM_DATA_PTR(shader->uniform.loc_fragCoordScale));
+			float coordScale[4];
+			LatteMRT::GetCurrentFragCoordScale(coordScale);
+			memcpy(GET_UNIFORM_DATA_PTR(shader->uniform.loc_fragCoordScale), coordScale, sizeof(float) * 2);
 		}
 		for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
 		{
