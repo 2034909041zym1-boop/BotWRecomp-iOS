@@ -78,7 +78,9 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             const bool glyphStrip =
                 (r.formats.size() == 1 && r.formats[0] == 0x01a &&
                  r.tilemodes.size() == 1 && r.tilemodes[0] == 0x004);
-            if (glyphStrip && (g_aspect_extra > 1.0f || g_render_scale < 1.0f)) {
+            const bool tinyHdrMip = (r.ow <= 64 && r.oh <= 32 &&
+                                     r.formats.size() == 1 && r.formats[0] == 0x816);
+            if ((glyphStrip || tinyHdrMip) && (g_aspect_extra > 1.0f || g_render_scale != 1.0f)) {
                 o.width = r.ow;
                 o.height = r.oh;
             } else {
@@ -101,7 +103,7 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
         // scale != 1.0 or hor+ is active).
         {
             const struct { int w, h; uint32_t fmt; } extra[] = {
-                {256, 90, 0x816}, {128, 45, 0x816}, {64, 22, 0x816}, {32, 32, 0x816},
+                {256, 90, 0x816}, {128, 45, 0x816}, {64, 22, 0x816},
                 {384, 180, 0x001}, {192, 90, 0x806}, {192, 90, 0x007},
             };
             const double widthScale = g_render_scale * g_aspect_extra;
