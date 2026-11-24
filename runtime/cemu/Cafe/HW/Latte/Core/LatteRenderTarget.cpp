@@ -17,6 +17,8 @@
 #include "Cafe/OS/libs/erreula/erreula.h"
 #include "input/InputManager.h"
 #include "Cafe/OS/libs/swkbd/swkbd.h"
+#include "../../../../../src/log.h"
+#include <unordered_set>
 
 uint32 prevScissorX = 0;
 uint32 prevScissorY = 0;
@@ -489,8 +491,18 @@ bool LatteMRT::UpdateCurrentFBO()
 			rtEffectiveSize->width = effectiveWidth;
 			rtEffectiveSize->height = effectiveHeight;
 		}
-		else if (rtEffectiveSize->width != effectiveWidth && rtEffectiveSize->height != effectiveHeight)
+		else if (rtEffectiveSize->width != effectiveWidth || rtEffectiveSize->height != effectiveHeight)
 		{
+			static std::unordered_set<uint64> s_rtColorMismatchSeen;
+			const uint64 key = ((uint64)rtEffectiveSize->width << 48) ^ ((uint64)rtEffectiveSize->height << 36) ^
+				((uint64)effectiveWidth << 24) ^ ((uint64)effectiveHeight << 12) ^ (uint64)(uint32)colorAttachmentView->baseTexture->format;
+			if (s_rtColorMismatchSeen.size() < 64 && s_rtColorMismatchSeen.insert(key).second)
+			{
+				LOG("[rt-color-mismatch] rtEff=%dx%d attEff=%dx%d real=%ux%u fmt=%04x",
+					rtEffectiveSize->width, rtEffectiveSize->height, effectiveWidth, effectiveHeight,
+					colorAttachmentView->baseTexture->width, colorAttachmentView->baseTexture->height,
+					(uint32)colorAttachmentView->baseTexture->format);
+			}
 			cemuLog_logDebug(LogType::Force, "Color buffer size mismatch ({}x{}). Effective size: {}x{} Real size: {}x{} Mismatching texture: {:08x} {}x{} fmt {:04x}", rtEffectiveSize->width, rtEffectiveSize->height, effectiveWidth, effectiveHeight, colorAttachmentView->baseTexture->width, colorAttachmentView->baseTexture->height, colorAttachmentView->baseTexture->physAddress, colorAttachmentView->baseTexture->width, colorAttachmentView->baseTexture->height, (uint32)colorAttachmentView->baseTexture->format);
 		}
 		// currently the first color attachment defines the size of the current render target
@@ -586,8 +598,18 @@ bool LatteMRT::UpdateCurrentFBO()
 					rtEffectiveSize->width = effectiveWidth;
 					rtEffectiveSize->height = effectiveHeight;
 				}
-				else if (rtEffectiveSize->width > effectiveWidth && rtEffectiveSize->height > effectiveHeight)
+				else if (rtEffectiveSize->width > effectiveWidth || rtEffectiveSize->height > effectiveHeight)
 				{
+					static std::unordered_set<uint64> s_rtDepthMismatchSeen;
+					const uint64 key = ((uint64)rtEffectiveSize->width << 48) ^ ((uint64)rtEffectiveSize->height << 36) ^
+						((uint64)effectiveWidth << 24) ^ ((uint64)effectiveHeight << 12) ^ (uint64)(uint32)depthBufferView->baseTexture->format;
+					if (s_rtDepthMismatchSeen.size() < 64 && s_rtDepthMismatchSeen.insert(key).second)
+					{
+						LOG("[rt-depth-mismatch] rtEff=%dx%d depthEff=%dx%d real=%ux%u fmt=%04x",
+							rtEffectiveSize->width, rtEffectiveSize->height, effectiveWidth, effectiveHeight,
+							depthBufferView->baseTexture->width, depthBufferView->baseTexture->height,
+							(uint32)depthBufferView->baseTexture->format);
+					}
 					if (_depthBufferSizeWarningCount < 100)
 					{
 						cemuLog_logDebug(LogType::Force, "Depth buffer size too small. Effective size: {}x{} Real size: {}x{} Mismatching texture: {:08x} {}x{} fmt {:04x}", effectiveWidth, effectiveHeight, depthBufferView->baseTexture->width, depthBufferView->baseTexture->height, depthBufferView->baseTexture->physAddress, depthBufferView->baseTexture->width, depthBufferView->baseTexture->height, (uint32)depthBufferView->baseTexture->format);

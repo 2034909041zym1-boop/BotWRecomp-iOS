@@ -5,6 +5,8 @@
 #include "Cafe/HW/Latte/Core/LatteSurfaceCopy.h"
 
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
+#include "../../../../../src/log.h"
+#include <unordered_set>
 
 /* Surface copies are tricky to handle because we simulate unified memory on top of two separate memory systems: RAM and VRAM
  * Cemu may only have texture data in either RAM or VRAM, or both. And doing transfers to or from CPU can quickly become prohibitively expensive
@@ -122,14 +124,15 @@ void LatteSurfaceCopy_copySurfaceNew(const LatteSurfaceCopyParam& src, const Lat
 		}
 		else
 		{
-			static int s_surfSkipLogs = 0;
-			if (s_surfSkipLogs < 20)
+			sint32 sw, sh, dw, dh;
+			sourceTexture->GetEffectiveSize(sw, sh, sourceView->firstMip);
+			destinationTexture->GetEffectiveSize(dw, dh, destinationView->firstMip);
+			static std::unordered_set<uint64> s_surfSkipSeen;
+			const uint64 skipKey = ((uint64)sourceTexture->width << 48) ^ ((uint64)sourceTexture->height << 36) ^ ((uint64)(uint32)sourceTexture->format << 24) ^
+				((uint64)destinationTexture->width << 12) ^ (uint64)destinationTexture->height ^ ((uint64)(uint32)destinationTexture->format << 56);
+			if (s_surfSkipSeen.size() < 256 && s_surfSkipSeen.insert(skipKey).second)
 			{
-				s_surfSkipLogs++;
-				sint32 sw, sh, dw, dh;
-				sourceTexture->GetEffectiveSize(sw, sh, sourceView->firstMip);
-				destinationTexture->GetEffectiveSize(dw, dh, destinationView->firstMip);
-				cemuLog_log(LogType::Force, "[surf-copy-skip] src {}x{}({}x{}) fmt={:04x} -> dst {}x{}({}x{}) fmt={:04x}",
+				LOG("[surf-copy-skip] src %ux%u(%dx%d) fmt=%04x -> dst %ux%u(%dx%d) fmt=%04x",
 					sourceTexture->width, sourceTexture->height, sw, sh, (uint32)sourceTexture->format,
 					destinationTexture->width, destinationTexture->height, dw, dh, (uint32)destinationTexture->format);
 			}

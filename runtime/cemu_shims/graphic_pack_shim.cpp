@@ -96,11 +96,13 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
             o.format = -1;
             gp->m_rules.push_back(rule);
         }
-        // Padded mip/sub-surface aliases used by BotW's bloom/volumetric pyramid copies
+        // Padded mip/sub-surface aliases used by BotW's bloom/volumetric/heatwave pyramid copies
         // (without matching rules, LatteTexture_CopySlice skips them with [copy-skip] whenever
-        // scale != 1.0 or hor+ is active).
+        // scale != 1.0 or hor+ is active; e.g. 1024x360 fmt=0816 aliases mip 1 of 1280x720 fmt=0816
+        // for Eldin Canyon's fullscreen heat-shimmer distortion).
         {
             const struct { int w, h; uint32_t fmt; } extra[] = {
+                {1024, 360, 0x816}, {1024, 368, 0x816}, {512, 180, 0x816}, {512, 184, 0x816},
                 {256, 90, 0x816}, {128, 45, 0x816}, {64, 22, 0x816},
                 {384, 180, 0x001}, {192, 90, 0x806}, {192, 90, 0x007},
             };

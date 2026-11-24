@@ -1142,10 +1142,22 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
         effectiveCopyHeight *= multY;
     }
 
-    auto blitCommandEncoder = GetBlitCommandEncoder();
-
     auto mtlSrc = static_cast<LatteTextureMtl*>(src)->GetTexture();
     auto mtlDst = static_cast<LatteTextureMtl*>(dst)->GetTexture();
+
+    const sint32 srcMipW = std::max<sint32>(1, (sint32)mtlSrc->width() >> srcMip);
+    const sint32 srcMipH = std::max<sint32>(1, (sint32)mtlSrc->height() >> srcMip);
+    const sint32 dstMipW = std::max<sint32>(1, (sint32)mtlDst->width() >> dstMip);
+    const sint32 dstMipH = std::max<sint32>(1, (sint32)mtlDst->height() >> dstMip);
+    if (srcBlockTexelSize.x == dstBlockTexelSize.x && srcBlockTexelSize.y == dstBlockTexelSize.y)
+    {
+        effectiveCopyWidth = std::min<sint32>(effectiveCopyWidth, std::min<sint32>(srcMipW - effectiveSrcX, dstMipW - effectiveDstX));
+        effectiveCopyHeight = std::min<sint32>(effectiveCopyHeight, std::min<sint32>(srcMipH - effectiveSrcY, dstMipH - effectiveDstY));
+        if (effectiveCopyWidth <= 0 || effectiveCopyHeight <= 0)
+            return;
+    }
+
+    auto blitCommandEncoder = GetBlitCommandEncoder();
 
     uint32 srcBaseLayer = 0;
     uint32 dstBaseLayer = 0;
@@ -1181,8 +1193,8 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 	// If copying whole textures, we can do a more efficient copy
     if (effectiveSrcX == 0 && effectiveSrcY == 0 && effectiveDstX == 0 && effectiveDstY == 0 &&
         srcOffsetZ == 0 && dstOffsetZ == 0 &&
-        effectiveCopyWidth == src->GetMipWidth(srcMip) && effectiveCopyHeight == src->GetMipHeight(srcMip) && srcDepth == src->GetMipDepth(srcMip) &&
-        effectiveCopyWidth == dst->GetMipWidth(dstMip) && effectiveCopyHeight == dst->GetMipHeight(dstMip) && dstDepth == dst->GetMipDepth(dstMip) &&
+        effectiveCopyWidth == srcMipW && effectiveCopyHeight == srcMipH && srcDepth == src->GetMipDepth(srcMip) &&
+        effectiveCopyWidth == dstMipW && effectiveCopyHeight == dstMipH && dstDepth == dst->GetMipDepth(dstMip) &&
         srcLayerCount == dstLayerCount)
     {
         blitCommandEncoder->copyFromTexture(mtlSrc, srcBaseLayer, srcMip, mtlDst, dstBaseLayer, dstMip, srcLayerCount, 1);

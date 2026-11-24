@@ -1728,7 +1728,7 @@ vertex VertexOut main0(uint vid [[vertex_id]], uint iid [[instance_id]],
         as_type<int>(mul_nonIEEE(as_type<float>(R6i.y), as_type<float>(R3i.x)) +
                      as_type<float>(backupReg0i));
     R124i.w =
-        as_type<int>(as_type<float>(supportBuffer.remapped[4].x * resXScale));
+        as_type<int>(as_type<float>(supportBuffer.remapped[4].x) * resXScale);
     R124i.w = as_type<int>(as_type<float>(R124i.w) / 2.0);
     R125i.z =
         as_type<int>(as_type<float>(supportBuffer.remapped[4].y) * resYScale);
@@ -2485,10 +2485,10 @@ vertex VertexOut main0(uint vid [[vertex_id]], uint iid [[instance_id]],
         mul_nonIEEE(as_type<float>(R2i.y), as_type<float>(R126i.z)) +
         as_type<float>(R127i.w));
     R127i.w =
-        as_type<int>(as_type<float>(supportBuffer.remapped[4].x) / resXScale);
+        as_type<int>(as_type<float>(supportBuffer.remapped[4].x) * resXScale);
     R127i.w = as_type<int>(as_type<float>(R127i.w) / 2.0);
     R125i.z =
-        as_type<int>(as_type<float>(supportBuffer.remapped[4].y) / resYScale);
+        as_type<int>(as_type<float>(supportBuffer.remapped[4].y) * resYScale);
     R125i.z = as_type<int>(as_type<float>(R125i.z) / 2.0);
     // 5
     backupReg0i = R126i.x;
@@ -3226,10 +3226,10 @@ vertex VertexOut main0(uint vid [[vertex_id]], uint iid [[instance_id]],
     R125i.y = as_type<int>(
         mul_nonIEEE(as_type<float>(R127i.z), as_type<float>(PV1ix)));
     R126i.z =
-        as_type<int>(as_type<float>(supportBuffer.remapped[4].y) / resYScale);
+        as_type<int>(as_type<float>(supportBuffer.remapped[4].y) * resYScale);
     R126i.z = as_type<int>(as_type<float>(R126i.z) / 2.0);
     R126i.w =
-        as_type<int>(as_type<float>(supportBuffer.remapped[4].x) / resXScale);
+        as_type<int>(as_type<float>(supportBuffer.remapped[4].x) * resXScale);
     R126i.w = as_type<int>(as_type<float>(R126i.w) / 2.0);
     R124i.y =
         as_type<int>(as_type<float>(supportBuffer.remapped[4].z) / resXScale);
