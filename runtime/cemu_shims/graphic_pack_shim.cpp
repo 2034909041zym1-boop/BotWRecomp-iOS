@@ -80,6 +80,12 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
                  r.tilemodes.size() == 1 && r.tilemodes[0] == 0x004);
             const bool tinyHdrMip = (r.ow <= 64 && r.oh <= 32 &&
                                      r.formats.size() == 1 && r.formats[0] == 0x816);
+            // 64x64 R32 depth (0x80e) is not a screen-space target: it is a square top-down
+            // occlusion/height map created only in Eldin (volcano ash/ember particles). Rescaling it
+            // (63x51 / 78x64 / 51x51) breaks its copies to the unscaled 64x64 sibling surfaces and the
+            // ash depth test returns garbage -> black checkerboard in the distant haze/sky.
+            const bool squareDepthMap = (r.width == 64 && r.height == 64 && r.formats.size() == 1 && r.formats[0] == 0x80e);
+            if (squareDepthMap) continue;
             if ((glyphStrip || tinyHdrMip) && (g_aspect_extra > 1.0f || g_render_scale != 1.0f)) {
                 o.width = r.ow;
                 o.height = r.oh;
