@@ -86,15 +86,36 @@ const std::vector<std::shared_ptr<GraphicPack2>>& GraphicPack2::GetActiveGraphic
                 // Keep exact proportional widths (matching Cemu's Graphics pack rules.txt);
                 // rounding small targets up to 32px in hor+ distorts their width ratio by 20-60%
                 // and breaks rescale-ratio matching across the Bloom/Exposure mip pyramid.
-                int ow = std::max(1, (int)(widthScale * r.ow + r.ow_add));
+                int ow = (int)std::max(1L, std::lround(widthScale * r.ow + r.ow_add));
                 o.width = ow;
-                o.height = std::max(1, (int)(g_render_scale * r.oh + r.oh_add));
+                o.height = (int)std::max(1L, std::lround((double)g_render_scale * r.oh + r.oh_add));
             }
             // Cemu's 10-bit -> 16-bit UNORM color-buffer upgrade (0x019 -> 0x01f) requires matching
             // custom shaders; without them it changes buffer bit depth and washes the picture out.
             // Since FindCustomShaderSource is disabled here, always keep native buffer formats.
             o.format = -1;
             gp->m_rules.push_back(rule);
+        }
+        // Padded mip/sub-surface aliases used by BotW's bloom/volumetric pyramid copies
+        // (without matching rules, LatteTexture_CopySlice skips them with [copy-skip] whenever
+        // scale != 1.0 or hor+ is active).
+        {
+            const struct { int w, h; uint32_t fmt; } extra[] = {
+                {256, 90, 0x816}, {128, 45, 0x816}, {64, 22, 0x816}, {32, 32, 0x816},
+                {384, 180, 0x001}, {192, 90, 0x806}, {192, 90, 0x007},
+            };
+            const double widthScale = g_render_scale * g_aspect_extra;
+            for (const auto& e : extra) {
+                TextureRule rule;
+                rule.filter_settings.width = e.w;
+                rule.filter_settings.height = e.h;
+                rule.filter_settings.depth = -1;
+                rule.filter_settings.format_whitelist = {e.fmt};
+                rule.overwrite_settings.width = (int)std::max(1L, std::lround(widthScale * e.w));
+                rule.overwrite_settings.height = (int)std::max(1L, std::lround((double)g_render_scale * e.h));
+                rule.overwrite_settings.format = -1;
+                gp->m_rules.push_back(rule);
+            }
         }
         v.push_back(gp);
         return v;
